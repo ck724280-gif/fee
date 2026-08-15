@@ -77,7 +77,7 @@ async function main() {
     fs,
     dir: rootDir,
     remote: 'origin',
-    url: 'https://github.com/ck724280-gif/DPR-FEE-MANAGEMENT.git',
+    url: 'https://github.com/ck724280-gif/fee.git',
     force: true,
   });
 
