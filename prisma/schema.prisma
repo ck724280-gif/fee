@@ -1,0 +1,286 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum FeeMode {
+  DEFAULT
+  CUSTOM
+}
+
+enum DiscountType {
+  NONE
+  FIXED
+  PERCENTAGE
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  LEFT
+  COMPLETED
+}
+
+enum ClassStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LateFeeType {
+  FIXED
+  PER_DAY
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum FeeStatus {
+  UPCOMING
+  DUE
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  WAIVED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CARD
+  OTHER
+}
+
+enum DocumentType {
+  RECEIPT
+  REMINDER
+  STATEMENT
+  REPORT
+}
+
+enum ExpenseCategory {
+  TEACHER_SALARY
+  RENT
+  ELECTRICITY_BILL
+  STUDY_MATERIALS_PRINTING
+  MARKETING_PROMOTION
+  INTERNET_STATIONERY
+  MAINTENANCE_REPAIRS
+  OTHER
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  role         String     @default("ADMIN")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  payments     Payment[]
+  expenses     Expense[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Class {
+  id                  String      @id @default(uuid())
+  name                String      @unique
+  defaultMonthlyFee   Float       @default(0) @map("default_monthly_fee")
+  defaultAdmissionFee Float       @default(0) @map("default_admission_fee")
+  lateFeeEnabled      Boolean     @default(false) @map("late_fee_enabled")
+  lateFeeType         LateFeeType @default(FIXED) @map("late_fee_type")
+  lateFeeAmount       Float       @default(0) @map("late_fee_amount")
+  graceDays           Int         @default(0) @map("grace_days")
+  status              ClassStatus @default(ACTIVE)
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  students            Student[]
+  feeRecords          FeeRecord[]
+
+  @@map("classes")
+}
+
+model Student {
+  id               String        @id @default(uuid())
+  studentCode      String        @unique @map("student_code")
+  name             String
+  fatherName       String        @map("father_name")
+  motherName       String?       @map("mother_name")
+  guardianName     String?       @map("guardian_name")
+  mobile           String
+  whatsappNumber   String?       @map("whatsapp_number")
+  address          String?
+  dob              DateTime?
+  gender           Gender        @default(MALE)
+  school           String?
+  classId          String        @map("class_id")
+  admissionDate    DateTime      @map("admission_date")
+  joiningDate      DateTime?     @map("joining_date")
+  feeMode          FeeMode       @default(DEFAULT) @map("fee_mode")
+  customMonthlyFee Float?        @map("custom_monthly_fee")
+  admissionFee     Float         @default(0) @map("admission_fee")
+  discountType     DiscountType  @default(NONE) @map("discount_type")
+  discountValue    Float         @default(0) @map("discount_value")
+  status           StudentStatus @default(ACTIVE)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  class            Class         @relation(fields: [classId], references: [id], onDelete: Restrict)
+  feeRecords       FeeRecord[]
+  payments         Payment[]
+  documents        Document[]
+
+  @@index([classId])
+  @@index([status])
+  @@index([admissionDate])
+  @@map("students")
+}
+
+model FeeRecord {
+  id                 String       @id @default(uuid())
+  studentId          String       @map("student_id")
+  classId            String       @map("class_id")
+  billingPeriodStart DateTime     @map("billing_period_start")
+  billingPeriodEnd   DateTime     @map("billing_period_end")
+  dueDate            DateTime     @map("due_date")
+  baseAmount         Float        @map("base_amount")
+  admissionFeeAmount Float        @default(0) @map("admission_fee_amount")
+  discountAmount     Float        @default(0) @map("discount_amount")
+  lateFeeAmount      Float        @default(0) @map("late_fee_amount")
+  totalAmount        Float        @map("total_amount")
+  paidAmount         Float        @default(0) @map("paid_amount")
+  outstandingAmount  Float        @map("outstanding_amount")
+  status             FeeStatus    @default(UPCOMING)
+  feeMode            FeeMode      @default(DEFAULT) @map("fee_mode")
+  notes              String?
+  generatedAt        DateTime     @default(now()) @map("generated_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  student            Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  class              Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  payments           Payment[]
+
+  @@unique([studentId, billingPeriodStart, billingPeriodEnd], name: "uq_student_billing_period")
+  @@index([studentId])
+  @@index([classId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("fee_records")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  receiptNumber    String        @unique @map("receipt_number")
+  feeRecordId      String        @map("fee_record_id")
+  studentId        String        @map("student_id")
+  amount           Float
+  paymentMethod    PaymentMethod @default(CASH) @map("payment_method")
+  transactionId    String?       @map("transaction_id")
+  notes            String?
+  paymentDate      DateTime      @default(now()) @map("payment_date")
+  recordedByUserId String?       @map("recorded_by_user_id")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  feeRecord        FeeRecord     @relation(fields: [feeRecordId], references: [id], onDelete: Restrict)
+  student          Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedByUser   User?         @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([feeRecordId])
+  @@index([studentId])
+  @@index([paymentDate])
+  @@index([receiptNumber])
+  @@map("payments")
+}
+
+model Document {
+  id           String       @id @default(uuid())
+  token        String       @unique @default(uuid())
+  documentType DocumentType @map("document_type")
+  referenceId  String       @map("reference_id")
+  studentId    String?      @map("student_id")
+  metadata     Json?
+  expiresAt    DateTime?    @map("expires_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  student      Student?     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([referenceId])
+  @@index([studentId])
+  @@map("documents")
+}
+
+model InstituteSetting {
+  id               String   @id @default(uuid())
+  instituteName    String   @default("DPR Private Tuition") @map("institute_name")
+  tagline          String?  @default("Excellence in Academic Coaching & Guidance")
+  address          String?  @default("Station Road, Near City Center, West Bengal")
+  phone            String?  @default("+91 98765 43210")
+  whatsapp         String?  @default("+91 98765 43210")
+  email            String?  @default("info@dprtuition.com")
+  logoUrl          String?  @map("logo_url")
+  receiptPrefix    String   @default("DPR-RC") @map("receipt_prefix")
+  currencySymbol   String   @default("₹") @map("currency_symbol")
+  defaultGraceDays Int      @default(0) @map("default_grace_days")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("institute_settings")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  details   Json?
+  ipAddress String?  @map("ip_address")
+  timestamp DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entity, entityId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model Expense {
+  id               String          @id @default(uuid())
+  title            String
+  category         ExpenseCategory
+  amount           Float
+  expenseDate      DateTime        @default(now()) @map("expense_date")
+  paymentMethod    PaymentMethod   @default(CASH) @map("payment_method")
+  referenceNumber  String?         @map("reference_number")
+  payeeName        String?         @map("payee_name")
+  notes            String?
+  receiptUrl       String?         @map("receipt_url")
+  recordedByUserId String?         @map("recorded_by_user_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  recordedByUser   User?           @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([category])
+  @@index([expenseDate])
+  @@index([paymentMethod])
+  @@index([recordedByUserId])
+  @@map("expenses")
+}
