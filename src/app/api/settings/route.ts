@@ -52,21 +52,26 @@ export async function PUT(req: NextRequest) {
       });
     }
 
-    await prisma.auditLog.create({
-      data: {
-        action: 'SETTINGS_UPDATED',
-        entity: 'INSTITUTE_SETTING',
-        entityId: settings.id,
-        details: { changes: validatedData },
-      },
-    });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: 'SETTINGS_UPDATED',
+          entity: 'INSTITUTE_SETTING',
+          entityId: settings.id,
+          details: { changes: validatedData },
+        },
+      });
+    } catch (auditErr) {
+      console.warn('Audit log creation warning on settings update:', auditErr);
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Settings updated successfully',
+      message: 'Institute settings saved successfully!',
       data: settings,
     });
   } catch (error: any) {
+    console.error('Settings update error:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to update settings' },
       { status: 400 }

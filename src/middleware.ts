@@ -66,10 +66,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 6. Handling for Public Pages (e.g. /login)
+  // 6. Handling for Public Pages (e.g. /login, /fees/[id])
   if (isPublicPage) {
-    // If already authenticated and visiting /login, redirect to main dashboard
-    if (authPayload) {
+    // Only redirect to main dashboard if already authenticated and specifically visiting /login
+    if (authPayload && pathname === '/login') {
       return NextResponse.redirect(new URL('/', request.url));
     }
     return NextResponse.next();
