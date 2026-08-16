@@ -28,6 +28,7 @@ interface PublicUpiPaymentCardProps {
   upiId: string;
   payeeName: string;
   receiptPrefix?: string;
+  customQrUrl?: string | null;
   onPaymentSuccess?: (receiptData: any) => void;
 }
 
@@ -40,6 +41,7 @@ export default function PublicUpiPaymentCard({
   upiId,
   payeeName,
   receiptPrefix = 'DPR-RC',
+  customQrUrl,
   onPaymentSuccess,
 }: PublicUpiPaymentCardProps) {
   const [copied, setCopied] = useState(false);
@@ -62,10 +64,13 @@ export default function PublicUpiPaymentCard({
     note
   )}&cu=INR`;
 
-  // Dynamic QR Code image URL via secure SVG/PNG generator
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-    rawUpiUri
-  )}&format=svg`;
+  // Dynamic QR Code image URL via secure SVG/PNG generator or custom scanner QR
+  const qrImageUrl =
+    customQrUrl && customQrUrl.trim().length > 5
+      ? customQrUrl.trim()
+      : `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+          rawUpiUri
+        )}&format=svg`;
 
   const handleCopyUpi = () => {
     if (navigator?.clipboard) {

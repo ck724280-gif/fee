@@ -37,6 +37,7 @@ export default function SettingsPage() {
     upiId: 'dprtuition@upi',
     upiPayeeName: 'DPR Private Tuition',
     upiEnabled: true,
+    customQrUrl: '',
   });
 
   // Admin Profile & Security Form State
@@ -88,6 +89,7 @@ export default function SettingsPage() {
             upiId: settingsJson.data.upiId || 'dprtuition@upi',
             upiPayeeName: settingsJson.data.upiPayeeName || settingsJson.data.instituteName || 'DPR Private Tuition',
             upiEnabled: settingsJson.data.upiEnabled ?? true,
+            customQrUrl: settingsJson.data.customQrUrl || '',
           });
         }
 
@@ -448,6 +450,51 @@ export default function SettingsPage() {
                   required={formData.upiEnabled}
                 />
               </div>
+
+              <Input
+                label="Custom Scanner QR Image URL (Optional)"
+                placeholder="https://... (e.g. your physical PhonePe/GPay Standee QR image link)"
+                value={formData.customQrUrl}
+                onChange={(e) => setFormData({ ...formData, customQrUrl: e.target.value })}
+                helperText="Leave blank to automatically auto-generate dynamic QR codes for each student invoice"
+              />
+
+              {/* Live QR Preview Box */}
+              {formData.upiEnabled && (
+                <div className="p-4 bg-slate-900 text-white rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center gap-4">
+                  <div className="bg-white p-2.5 rounded-xl shrink-0 shadow-md">
+                    <img
+                      src={
+                        formData.customQrUrl && formData.customQrUrl.trim().length > 5
+                          ? formData.customQrUrl.trim()
+                          : `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+                              `upi://pay?pa=${encodeURIComponent(
+                                formData.upiId || 'dprtuition@upi'
+                              )}&pn=${encodeURIComponent(
+                                formData.upiPayeeName || 'DPR Private Tuition'
+                              )}&cu=INR`
+                            )}&format=svg`
+                      }
+                      alt="Live UPI QR Preview"
+                      className="w-24 h-24 sm:w-28 sm:h-28 object-contain"
+                    />
+                  </div>
+                  <div className="space-y-1 text-center sm:text-left">
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
+                      <span>Live Invoice QR Preview</span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-100">
+                      {formData.upiPayeeName || 'DPR Private Tuition'}
+                    </h4>
+                    <p className="text-xs font-mono text-emerald-400 font-semibold">
+                      {formData.upiId || 'dprtuition@upi'}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      Parents will scan this QR code or tap the one-tap payment button on their digital invoice to pay fees directly to your bank account.
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

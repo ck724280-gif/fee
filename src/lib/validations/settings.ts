@@ -14,6 +14,7 @@ export const updateSettingsSchema = z.object({
   upiId: z.string().trim().max(100).optional().nullable(),
   upiPayeeName: z.string().trim().max(150).optional().nullable(),
   upiEnabled: z.boolean().default(true),
+  customQrUrl: z.string().trim().optional().nullable(),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

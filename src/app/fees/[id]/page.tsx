@@ -79,6 +79,7 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
     upiPayeeName: 'DPR Private Tuition',
     upiEnabled: true,
     receiptPrefix: 'DPR-RC',
+    customQrUrl: null as string | null,
   };
 
   if (!fee || !fee.student) {
@@ -332,7 +333,8 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
                   outstandingAmount={fee.outstandingAmount}
                   upiId={upiVpa}
                   payeeName={upiPayee}
-                  receiptPrefix={settings.receiptPrefix || 'DPR-RC'}
+                  receiptPrefix={(settings as any).receiptPrefix || 'DPR-RC'}
+                  customQrUrl={(settings as any).customQrUrl}
                 />
               </div>
             )}

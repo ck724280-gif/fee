@@ -239,6 +239,7 @@ model InstituteSetting {
   upiId            String?  @default("dprtuition@upi") @map("upi_id")
   upiPayeeName     String?  @default("DPR Private Tuition") @map("upi_payee_name")
   upiEnabled       Boolean  @default(true) @map("upi_enabled")
+  customQrUrl      String?  @map("custom_qr_url")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
