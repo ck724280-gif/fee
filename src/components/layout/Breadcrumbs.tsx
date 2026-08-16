@@ -39,7 +39,7 @@ export function Breadcrumbs() {
         <span>Home</span>
       </Link>
 
-      {segments.map((seg, idx) => {
+      {segments.map((seg: string, idx: number) => {
         accumulatedPath += `/${seg}`;
         const isLast = idx === segments.length - 1;
         const displayName = routeNameMap[seg] || (seg.length > 20 ? `${seg.substring(0, 8)}...` : seg);

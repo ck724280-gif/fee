@@ -19,6 +19,7 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
+  CreditCard,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -33,6 +34,9 @@ export default function SettingsPage() {
     receiptPrefix: 'DPR-RC',
     currencySymbol: '₹',
     defaultGraceDays: 0,
+    upiId: 'dprtuition@upi',
+    upiPayeeName: 'DPR Private Tuition',
+    upiEnabled: true,
   });
 
   // Admin Profile & Security Form State
@@ -81,6 +85,9 @@ export default function SettingsPage() {
             receiptPrefix: settingsJson.data.receiptPrefix || 'DPR-RC',
             currencySymbol: settingsJson.data.currencySymbol || '₹',
             defaultGraceDays: settingsJson.data.defaultGraceDays ?? 0,
+            upiId: settingsJson.data.upiId || 'dprtuition@upi',
+            upiPayeeName: settingsJson.data.upiPayeeName || settingsJson.data.instituteName || 'DPR Private Tuition',
+            upiEnabled: settingsJson.data.upiEnabled ?? true,
           });
         }
 
@@ -388,6 +395,57 @@ export default function SettingsPage() {
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Online UPI Fee Collection & QR Setup */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+                <span>Zero-Cost Online UPI Payment & Dynamic QR Gateway</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
+                <div>
+                  <span className="text-xs font-bold text-emerald-950 block">
+                    Accept UPI Payments On Student Invoices
+                  </span>
+                  <span className="text-[11px] text-emerald-700 block">
+                    Enables one-tap UPI app launching (GPay, PhonePe, Paytm) and dynamic QR codes on public fee notices
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.upiEnabled}
+                    onChange={(e) => setFormData({ ...formData, upiEnabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Institute UPI ID / VPA *"
+                  placeholder="e.g. 7631240967@upi or dprtuition@okaxis"
+                  value={formData.upiId}
+                  onChange={(e) => setFormData({ ...formData, upiId: e.target.value })}
+                  helperText="Payments from parents will be credited directly to this UPI ID (0% transaction fee)"
+                  required={formData.upiEnabled}
+                />
+
+                <Input
+                  label="UPI Payee Display Name *"
+                  placeholder="DPR Private Tuition"
+                  value={formData.upiPayeeName}
+                  onChange={(e) => setFormData({ ...formData, upiPayeeName: e.target.value })}
+                  helperText="Shown in UPI apps when parent opens the payment link"
+                  required={formData.upiEnabled}
                 />
               </div>
             </CardContent>

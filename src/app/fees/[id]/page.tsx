@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { formatYMD } from '@/lib/billing-engine';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
+import PublicUpiPaymentCard from '@/components/public/PublicUpiPaymentCard';
 import {
   GraduationCap,
   Download,
@@ -74,6 +75,10 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
     phone: '+91 98765 43210',
     whatsapp: '+91 98765 43210',
     email: 'info@dprtuition.com',
+    upiId: 'dprtuition@upi',
+    upiPayeeName: 'DPR Private Tuition',
+    upiEnabled: true,
+    receiptPrefix: 'DPR-RC',
   };
 
   if (!fee || !fee.student) {
@@ -133,6 +138,9 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
   const isPartial = fee.status === 'PARTIALLY_PAID';
 
   const contactPhone = settings.whatsapp || settings.phone || '+91 98765 43210';
+  const upiVpa = settings.upiId || (settings.phone ? `${settings.phone.replace(/\D/g, '')}@upi` : 'dprtuition@upi');
+  const upiPayee = settings.upiPayeeName || settings.instituteName || 'DPR Private Tuition';
+
   const whatsappHelplineUrl = buildWhatsAppUrl(
     contactPhone,
     `Hello, I am inquiring about the fee notice for ${fee.student.name} (${fee.class.name}) - DPR ID: ${fee.student.studentCode}.`
@@ -140,7 +148,7 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 py-6 sm:py-10 px-4 sm:px-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="max-w-3xl mx-auto space-y-6">
         {/* Top Branding Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center gap-3.5">
@@ -165,7 +173,7 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
               href={whatsappHelplineUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition-colors shadow-xs"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               <span>Helpline WhatsApp</span>
@@ -313,28 +321,45 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
               </div>
             </div>
 
+            {/* Zero-Cost Interactive UPI Payment & Dynamic QR Gateway */}
+            {!isPaid && settings.upiEnabled !== false && (
+              <div className="pt-2">
+                <PublicUpiPaymentCard
+                  feeId={fee.id}
+                  studentName={fee.student.name}
+                  studentCode={fee.student.studentCode}
+                  className={fee.class.name}
+                  outstandingAmount={fee.outstandingAmount}
+                  upiId={upiVpa}
+                  payeeName={upiPayee}
+                  receiptPrefix={settings.receiptPrefix || 'DPR-RC'}
+                />
+              </div>
+            )}
+
             {/* Payment History if any payments exist */}
             {fee.payments.length > 0 && (
               <div className="space-y-2.5">
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <Receipt className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Payment Receipts on Record</span>
+                  <span>Verified Payment Receipts on Record</span>
                 </h4>
                 <div className="space-y-2">
                   {fee.payments.map((p) => (
                     <div
                       key={p.id}
-                      className="p-3 bg-emerald-50/50 border border-emerald-200/60 rounded-xl flex items-center justify-between text-xs"
+                      className="p-3.5 bg-emerald-50/60 border border-emerald-200/80 rounded-xl flex items-center justify-between text-xs shadow-xs"
                     >
                       <div>
-                        <div className="font-semibold text-emerald-900 flex items-center gap-2">
-                          <span>{p.receiptNumber}</span>
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px]">
+                        <div className="font-semibold text-emerald-950 flex items-center gap-2">
+                          <span className="font-mono">{p.receiptNumber}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-200/80 text-emerald-800 text-[10px] font-bold">
                             {p.paymentMethod}
                           </span>
                         </div>
-                        <span className="text-[11px] text-slate-500">
+                        <span className="text-[11px] text-slate-500 block mt-0.5">
                           Received on {formatDate(p.paymentDate)}
+                          {p.transactionId && ` • UTR: ${p.transactionId}`}
                         </span>
                       </div>
                       <div className="text-right">
@@ -366,7 +391,7 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
                   className="inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold transition-all shadow-lg shadow-emerald-600/20 cursor-pointer"
                 >
                   <MessageCircle className="w-4 h-4" />
-                  <span>Inquire / Pay via WhatsApp</span>
+                  <span>Inquire / Helpline WhatsApp</span>
                 </a>
               )}
             </div>

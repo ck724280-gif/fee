@@ -11,6 +11,9 @@ export const updateSettingsSchema = z.object({
   receiptPrefix: z.string().trim().min(1).max(20).default('DPR-RC'),
   currencySymbol: z.string().trim().min(1).max(5).default('₹'),
   defaultGraceDays: z.coerce.number().int().min(0).default(0),
+  upiId: z.string().trim().max(100).optional().nullable(),
+  upiPayeeName: z.string().trim().max(150).optional().nullable(),
+  upiEnabled: z.boolean().default(true),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

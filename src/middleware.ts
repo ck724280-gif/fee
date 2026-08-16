@@ -10,6 +10,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/login',
   '/api/documents/',
   '/api/settings',
+  '/api/fees/submit-utr',
+  '/api/verify',
 ];
 
 const PUBLIC_PAGE_PREFIXES = [
@@ -17,6 +19,7 @@ const PUBLIC_PAGE_PREFIXES = [
   '/fees/',
   '/receipts/',
   '/invoices/',
+  '/verify',
 ];
 
 export async function middleware(request: NextRequest) {

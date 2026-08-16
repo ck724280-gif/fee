@@ -236,6 +236,9 @@ model InstituteSetting {
   receiptPrefix    String   @default("DPR-RC") @map("receipt_prefix")
   currencySymbol   String   @default("₹") @map("currency_symbol")
   defaultGraceDays Int      @default(0) @map("default_grace_days")
+  upiId            String?  @default("dprtuition@upi") @map("upi_id")
+  upiPayeeName     String?  @default("DPR Private Tuition") @map("upi_payee_name")
+  upiEnabled       Boolean  @default(true) @map("upi_enabled")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
