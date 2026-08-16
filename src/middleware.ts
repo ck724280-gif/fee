@@ -9,10 +9,14 @@ const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_STRING);
 const PUBLIC_API_PREFIXES = [
   '/api/auth/login',
   '/api/documents/',
+  '/api/settings',
 ];
 
-const PUBLIC_PAGE_PATHS = [
+const PUBLIC_PAGE_PREFIXES = [
   '/login',
+  '/fees/',
+  '/receipts/',
+  '/invoices/',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -34,8 +38,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Check if route is a public Page route (e.g. /login)
-  const isPublicPage = PUBLIC_PAGE_PATHS.includes(pathname);
+  // 3. Check if route is a public Page route (e.g. /login, /fees/[id])
+  const isPublicPage = PUBLIC_PAGE_PREFIXES.some((prefix) =>
+    pathname === prefix || pathname.startsWith(prefix)
+  );
 
   // 4. Extract token from cookie or Authorization header
   let token = request.cookies.get(COOKIE_NAME)?.value;
