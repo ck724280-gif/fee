@@ -90,142 +90,165 @@ export async function recordPayment(
     throw new Error('Payment amount must be greater than 0');
   }
 
-  return await prismaClient.$transaction(async (tx: Prisma.TransactionClient | any) => {
-    // 1. Fetch fee record with student and class relation
-    const fee = await tx.feeRecord.findUnique({
-      where: { id: input.feeRecordId },
-      include: {
-        student: {
-          include: { class: true },
-        },
-        class: true,
-      },
-    });
-
-    if (!fee) {
-      throw new Error(`Fee record ${input.feeRecordId} not found`);
-    }
-
-    // 2. Overpayment validation guard
-    if (paymentAmount > fee.outstandingAmount) {
-      throw new Error(
-        `Payment amount (₹${paymentAmount}) cannot exceed outstanding balance of ₹${fee.outstandingAmount}`
-      );
-    }
-
-    const pDate = input.paymentDate ? new Date(input.paymentDate) : new Date();
-    const year = pDate.getFullYear();
-
-    // 3. Generate unique sequential receipt number
-    const receiptNumber = await generateReceiptNumber(tx, year);
-
-    const userId = input.recordedByUserId || input.createdById || null;
-
-    // 4. Create Payment record
-    const payment = await tx.payment.create({
-      data: {
-        receiptNumber,
-        feeRecordId: fee.id,
-        studentId: fee.studentId,
-        amount: paymentAmount,
-        paymentMethod: (input.paymentMethod || 'CASH') as PaymentMethod,
-        transactionId: input.transactionId || null,
-        notes: input.notes || null,
-        paymentDate: pDate,
-        recordedByUserId: userId,
-      },
-      include: {
-        student: {
-          select: {
-            id: true,
-            studentCode: true,
-            name: true,
-            mobile: true,
-            whatsappNumber: true,
-            classId: true,
+  const result = await prismaClient.$transaction(
+    async (tx: Prisma.TransactionClient | any) => {
+      // 1. Fetch fee record with student and class relation
+      const fee = await tx.feeRecord.findUnique({
+        where: { id: input.feeRecordId },
+        include: {
+          student: {
+            include: { class: true },
           },
+          class: true,
         },
-        feeRecord: true,
-      },
-    });
+      });
 
-    // 5. Compute new balances and status
-    const newPaidAmount = fee.paidAmount + paymentAmount;
-    const newOutstandingAmount = Math.max(0, fee.outstandingAmount - paymentAmount);
-    const newStatus: FeeStatus = newOutstandingAmount === 0 ? FeeStatus.PAID : FeeStatus.PARTIALLY_PAID;
+      if (!fee) {
+        throw new Error(`Fee record ${input.feeRecordId} not found`);
+      }
 
-    const updatedFeeRecord = await tx.feeRecord.update({
-      where: { id: fee.id },
-      data: {
-        paidAmount: newPaidAmount,
-        outstandingAmount: newOutstandingAmount,
-        status: newStatus,
-      },
-      include: {
-        student: {
-          include: { class: true },
-        },
-        class: true,
-      },
-    });
+      // 2. Overpayment validation guard
+      if (paymentAmount > fee.outstandingAmount) {
+        throw new Error(
+          `Payment amount (₹${paymentAmount}) cannot exceed outstanding balance of ₹${fee.outstandingAmount}`
+        );
+      }
 
-    // 6. Create secure UUID document token for PDF receipt
-    const documentToken = crypto.randomUUID();
-    await tx.document.create({
-      data: {
-        token: documentToken,
-        documentType: 'RECEIPT',
-        referenceId: payment.id,
-        studentId: fee.studentId,
-        metadata: {
+      const pDate = input.paymentDate ? new Date(input.paymentDate) : new Date();
+      const year = pDate.getFullYear();
+
+      // 3. Generate unique sequential receipt number
+      const receiptNumber = await generateReceiptNumber(tx, year);
+
+      const userId = input.recordedByUserId || input.createdById || null;
+
+      // 4. Create Payment record
+      const payment = await tx.payment.create({
+        data: {
           receiptNumber,
-          paymentId: payment.id,
           feeRecordId: fee.id,
           studentId: fee.studentId,
-          studentName: fee.student?.name,
-          studentCode: fee.student?.studentCode,
-          className: fee.student?.class?.name,
           amount: paymentAmount,
+          paymentMethod: (input.paymentMethod || 'CASH') as PaymentMethod,
+          transactionId: input.transactionId || null,
+          notes: input.notes || null,
+          paymentDate: pDate,
+          recordedByUserId: userId,
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              studentCode: true,
+              name: true,
+              mobile: true,
+              whatsappNumber: true,
+              classId: true,
+            },
+          },
+          feeRecord: true,
+        },
+      });
+
+      // 5. Compute new balances and status
+      const newPaidAmount = fee.paidAmount + paymentAmount;
+      const newOutstandingAmount = Math.max(0, fee.outstandingAmount - paymentAmount);
+      const newStatus: FeeStatus = newOutstandingAmount === 0 ? FeeStatus.PAID : FeeStatus.PARTIALLY_PAID;
+
+      const updatedFeeRecord = await tx.feeRecord.update({
+        where: { id: fee.id },
+        data: {
           paidAmount: newPaidAmount,
           outstandingAmount: newOutstandingAmount,
-          paymentMethod: input.paymentMethod,
-          transactionId: input.transactionId || null,
-          paymentDate: pDate.toISOString(),
-          billingPeriodStart: fee.billingPeriodStart,
-          billingPeriodEnd: fee.billingPeriodEnd,
+          status: newStatus,
         },
-        expiresAt: null,
-      },
-    });
+        include: {
+          student: {
+            include: { class: true },
+          },
+          class: true,
+        },
+      });
 
-    // 7. Create Audit Log
-    await tx.auditLog.create({
-      data: {
+      // 6. Create secure UUID document token for PDF receipt
+      const documentToken = crypto.randomUUID();
+      await tx.document.create({
+        data: {
+          token: documentToken,
+          documentType: 'RECEIPT',
+          referenceId: payment.id,
+          studentId: fee.studentId,
+          metadata: {
+            receiptNumber,
+            paymentId: payment.id,
+            feeRecordId: fee.id,
+            studentId: fee.studentId,
+            studentName: fee.student?.name,
+            studentCode: fee.student?.studentCode,
+            className: fee.student?.class?.name,
+            amount: paymentAmount,
+            paidAmount: newPaidAmount,
+            outstandingAmount: newOutstandingAmount,
+            paymentMethod: input.paymentMethod,
+            transactionId: input.transactionId || null,
+            paymentDate: pDate.toISOString(),
+            billingPeriodStart: fee.billingPeriodStart,
+            billingPeriodEnd: fee.billingPeriodEnd,
+          },
+          expiresAt: null,
+        },
+      });
+
+      return {
+        payment,
+        feeRecord: updatedFeeRecord,
+        receiptNumber,
+        documentToken,
+        documentUrl: `/api/documents/${documentToken}`,
         userId,
+        paymentAmount,
+        newStatus,
+        newPaidAmount,
+        newOutstandingAmount,
+      };
+    },
+    {
+      maxWait: 15000,
+      timeout: 30000,
+    }
+  );
+
+  // 7. Resilient Audit Logging outside interactive transaction
+  try {
+    await prismaClient.auditLog.create({
+      data: {
+        userId: result.userId,
         action: 'PAYMENT_RECORDED',
         entity: 'PAYMENT',
-        entityId: payment.id,
+        entityId: result.payment.id,
         details: {
-          receiptNumber,
-          amount: paymentAmount,
-          feeRecordId: fee.id,
-          studentId: fee.studentId,
+          receiptNumber: result.receiptNumber,
+          amount: result.paymentAmount,
+          feeRecordId: input.feeRecordId,
+          studentId: result.payment.studentId,
           paymentMethod: input.paymentMethod,
-          newStatus,
-          newPaidAmount,
-          remainingOutstanding: newOutstandingAmount,
+          newStatus: result.newStatus,
+          newPaidAmount: result.newPaidAmount,
+          remainingOutstanding: result.newOutstandingAmount,
         },
       },
     });
+  } catch (auditErr) {
+    console.warn('Audit log creation warning (payment recorded successfully):', auditErr);
+  }
 
-    return {
-      payment,
-      feeRecord: updatedFeeRecord,
-      receiptNumber,
-      documentToken,
-      documentUrl: `/api/documents/${documentToken}`,
-    };
-  });
+  return {
+    payment: result.payment,
+    feeRecord: result.feeRecord,
+    receiptNumber: result.receiptNumber,
+    documentToken: result.documentToken,
+    documentUrl: result.documentUrl,
+  };
 }
 
 /**
@@ -411,8 +434,28 @@ export async function listPayments(
 
   const totalPages = Math.ceil(total / limit) || 1;
 
+  const paymentIds = payments.map((p: any) => p.id);
+  const docs = await prismaClient.document.findMany({
+    where: {
+      referenceId: { in: paymentIds },
+      documentType: 'RECEIPT',
+    },
+    select: {
+      token: true,
+      referenceId: true,
+    },
+  });
+
+  const docMap = new Map(docs.map((d: any) => [d.referenceId, d.token]));
+
+  const paymentsWithDocs = payments.map((p: any) => ({
+    ...p,
+    documentToken: docMap.get(p.id) || null,
+    documentUrl: docMap.has(p.id) ? `/api/documents/${docMap.get(p.id)}` : null,
+  }));
+
   return {
-    payments,
+    payments: paymentsWithDocs,
     pagination: {
       total,
       page,

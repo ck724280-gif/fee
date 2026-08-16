@@ -40,6 +40,12 @@ export default function PaymentsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  const [instituteSettings, setInstituteSettings] = useState<{
+    instituteName?: string;
+    phone?: string;
+    whatsapp?: string;
+  } | null>(null);
+
   const fetchPayments = useCallback(
     async (pageNumber = 1) => {
       try {
@@ -52,13 +58,22 @@ export default function PaymentsPage() {
         if (startDate) params.set('startDate', startDate);
         if (endDate) params.set('endDate', endDate);
 
-        const res = await fetch(`/api/payments?${params.toString()}`);
+        const [res, setRes] = await Promise.all([
+          fetch(`/api/payments?${params.toString()}`),
+          fetch('/api/settings'),
+        ]);
         const json = await res.json();
+        const setJson = await setRes.json();
 
-        if (json.payments) {
-          setPayments(json.payments);
-          setPagination(json.pagination);
-          setSummary(json.summary);
+        if (setJson.success && setJson.data) {
+          setInstituteSettings(setJson.data);
+        }
+
+        const dataObj = json.data || json;
+        if (dataObj.payments) {
+          setPayments(dataObj.payments);
+          setPagination(dataObj.pagination);
+          setSummary(dataObj.summary);
         }
       } catch (err) {
         console.error('Failed to load payments:', err);
@@ -75,6 +90,8 @@ export default function PaymentsPage() {
 
   const handleWhatsAppReceipt = (p: any) => {
     const phone = p.student?.whatsappNumber || p.student?.mobile;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const docPath = p.documentUrl || `/api/documents/${p.documentToken || p.id}`;
     const msg = generatePaymentReceiptMessage({
       studentName: p.student?.name,
       className: p.student?.class?.name,
@@ -82,7 +99,9 @@ export default function PaymentsPage() {
       receiptNumber: p.receiptNumber,
       paymentMethod: p.paymentMethod,
       outstandingAmount: p.feeRecord?.outstandingAmount ?? 0,
-      documentUrl: `https://dprtuition.vercel.app/api/documents/${p.id}`,
+      documentUrl: `${origin}${docPath}`,
+      instituteName: instituteSettings?.instituteName || 'DPR Private Tuition',
+      contactPhone: instituteSettings?.phone || instituteSettings?.whatsapp || '+91 98765 43210',
     });
 
     const url = buildWhatsAppUrl(phone, msg);

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordPaymentSchema, paymentFilterSchema } from '@/lib/validations/payment';
 import { recordPayment, listPayments } from '@/lib/payment-service';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getCurrentUser(request);
+    const userId = request.headers.get('x-user-id') || session?.userId || null;
+
     const body = await request.json();
     const parsed = recordPaymentSchema.safeParse(body);
 
@@ -18,7 +22,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await recordPayment(parsed.data);
+    const result = await recordPayment({
+      ...parsed.data,
+      recordedByUserId: userId,
+    });
 
     return NextResponse.json(
       {

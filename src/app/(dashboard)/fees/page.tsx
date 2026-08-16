@@ -56,13 +56,24 @@ export default function FeesPage() {
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
   const [collectingFeeRecord, setCollectingFeeRecord] = useState<FeeRecordSummary | null>(null);
 
+  const [instituteSettings, setInstituteSettings] = useState<{
+    instituteName?: string;
+    phone?: string;
+    whatsapp?: string;
+  } | null>(null);
+
   const fetchClasses = useCallback(async () => {
     try {
-      const res = await fetch('/api/classes');
-      const json = await res.json();
-      if (json.success) setClasses(json.data);
+      const [clsRes, setRes] = await Promise.all([
+        fetch('/api/classes'),
+        fetch('/api/settings'),
+      ]);
+      const clsJson = await clsRes.json();
+      const setJson = await setRes.json();
+      if (clsJson.success) setClasses(clsJson.data);
+      if (setJson.success && setJson.data) setInstituteSettings(setJson.data);
     } catch (err) {
-      console.error('Failed to load classes:', err);
+      console.error('Failed to load classes or settings:', err);
     }
   }, []);
 
@@ -137,13 +148,16 @@ export default function FeesPage() {
 
   const handleWhatsAppReminder = (f: any) => {
     const phone = f.student?.whatsappNumber || f.student?.mobile;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const msg = generateFeeReminderMessage({
       studentName: f.student?.name,
       className: f.class?.name,
       dueAmount: f.outstandingAmount,
       dueDateStr: formatYMD(new Date(f.dueDate)),
       billingPeriodStr: `${formatDate(f.billingPeriodStart)} to ${formatDate(f.billingPeriodEnd)}`,
-      documentUrl: `https://dprtuition.vercel.app/fees/${f.id}`,
+      documentUrl: `${origin}/fees/${f.id}`,
+      instituteName: instituteSettings?.instituteName || 'DPR Private Tuition',
+      contactPhone: instituteSettings?.phone || instituteSettings?.whatsapp || '+91 98765 43210',
     });
     const url = buildWhatsAppUrl(phone, msg);
     window.open(url, '_blank');

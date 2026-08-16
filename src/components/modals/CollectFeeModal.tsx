@@ -127,9 +127,29 @@ export function CollectFeeModal({
     }
   };
 
+  const [instituteSettings, setInstituteSettings] = useState<{
+    instituteName?: string;
+    phone?: string;
+    whatsapp?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/settings')
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.success && json.data) {
+            setInstituteSettings(json.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
+
   const handleWhatsAppReceipt = () => {
-    if (!paymentResult) return;
+    if (!paymentResult || !feeRecord) return;
     const phone = feeRecord.whatsappNumber || feeRecord.mobile;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const msg = generatePaymentReceiptMessage({
       studentName: feeRecord.studentName,
       className: feeRecord.className,
@@ -137,7 +157,9 @@ export function CollectFeeModal({
       receiptNumber: paymentResult.receiptNumber,
       paymentMethod,
       outstandingAmount: paymentResult.remainingOutstanding,
-      documentUrl: `https://dprtuition.vercel.app${paymentResult.documentUrl}`,
+      documentUrl: `${origin}${paymentResult.documentUrl}`,
+      instituteName: instituteSettings?.instituteName || 'DPR Private Tuition',
+      contactPhone: instituteSettings?.phone || instituteSettings?.whatsapp || '+91 98765 43210',
     });
 
     const url = buildWhatsAppUrl(phone, msg);

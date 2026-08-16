@@ -84,6 +84,7 @@ export async function getDashboardStats(
     recentPaymentsRaw,
     urgentOverdueRaw,
     allPayments,
+    settings,
   ] = await Promise.all([
     prismaClient.student.count(),
     prismaClient.student.count({ where: { status: StudentStatus.ACTIVE } }),
@@ -174,6 +175,7 @@ export async function getDashboardStats(
         paymentDate: true,
       },
     }),
+    prismaClient.instituteSetting.findFirst(),
   ]);
 
   const kpis: DashboardKPIData = {
@@ -272,13 +274,16 @@ export async function getDashboardStats(
     const dueStr = formatYMD(new Date(f.dueDate));
 
     const phone = f.student.whatsappNumber || f.student.mobile;
+    const origin = process.env.NEXT_PUBLIC_APP_URL || '';
     const msg = generateOverdueNoticeMessage({
       studentName: f.student.name,
       className: f.class.name,
       overdueAmount: f.outstandingAmount,
       dueDateStr: dueStr,
       overdueDays,
-      documentUrl: `https://dprtuition.vercel.app/fees`,
+      documentUrl: origin ? `${origin}/fees` : '/fees',
+      instituteName: settings?.instituteName || 'DPR Private Tuition',
+      contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
     });
     const whatsappUrl = phone ? buildWhatsAppUrl(phone, msg) : undefined;
 

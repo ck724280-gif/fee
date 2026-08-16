@@ -150,13 +150,17 @@ export default function StudentProfilePage({
 
   const handleWhatsAppReminder = (fee: any) => {
     const phone = student.whatsappNumber || student.mobile;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const settings = (studentData as any)?.instituteSettings;
     const msg = generateFeeReminderMessage({
       studentName: student.name,
       className: student.class.name,
       dueAmount: fee.outstandingAmount,
       dueDateStr: fee.dueDateStr,
       billingPeriodStr: fee.billingPeriodStr,
-      documentUrl: `https://dprtuition.vercel.app/fees/${fee.id}`,
+      documentUrl: `${origin}/fees/${fee.id}`,
+      instituteName: settings?.instituteName || 'DPR Private Tuition',
+      contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
     });
     const url = buildWhatsAppUrl(phone, msg);
     window.open(url, '_blank');
@@ -164,6 +168,9 @@ export default function StudentProfilePage({
 
   const handleWhatsAppReceipt = (p: any) => {
     const phone = student.whatsappNumber || student.mobile;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const settings = (studentData as any)?.instituteSettings;
+    const docPath = p.documentUrl || `/api/documents/${p.documentToken}`;
     const msg = generatePaymentReceiptMessage({
       studentName: student.name,
       className: student.class.name,
@@ -171,7 +178,9 @@ export default function StudentProfilePage({
       receiptNumber: p.receiptNumber,
       paymentMethod: p.paymentMethod,
       outstandingAmount: financialSummary.totalOutstanding,
-      documentUrl: `https://dprtuition.vercel.app${p.documentUrl || `/api/documents/${p.documentToken}`}`,
+      documentUrl: `${origin}${docPath}`,
+      instituteName: settings?.instituteName || 'DPR Private Tuition',
+      contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
     });
     const url = buildWhatsAppUrl(phone, msg);
     window.open(url, '_blank');

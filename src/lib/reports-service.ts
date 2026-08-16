@@ -245,14 +245,19 @@ export async function getOverdueFeesReport(
     where.studentId = filters.studentId;
   }
 
-  const feeRecords = await prismaClient.feeRecord.findMany({
-    where,
-    include: {
-      student: true,
-      class: true,
-    },
-    orderBy: { dueDate: 'asc' },
-  });
+  const [feeRecords, settings] = await Promise.all([
+    prismaClient.feeRecord.findMany({
+      where,
+      include: {
+        student: true,
+        class: true,
+      },
+      orderBy: { dueDate: 'asc' },
+    }),
+    prismaClient.instituteSetting.findFirst(),
+  ]);
+
+  const origin = process.env.NEXT_PUBLIC_APP_URL || '';
 
   const rows: OverdueFeeRow[] = feeRecords.map((f: any) => {
     const due = startOfDay(f.dueDate);
@@ -270,7 +275,9 @@ export async function getOverdueFeesReport(
       overdueAmount: f.outstandingAmount,
       dueDateStr: dueStr,
       overdueDays,
-      documentUrl: `https://dprtuition.vercel.app/fees/${f.id}`,
+      documentUrl: origin ? `${origin}/fees/${f.id}` : `/fees/${f.id}`,
+      instituteName: settings?.instituteName || 'DPR Private Tuition',
+      contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
     });
     const whatsappUrl = phone ? buildWhatsAppUrl(phone, msg) : undefined;
 

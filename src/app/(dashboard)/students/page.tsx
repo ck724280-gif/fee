@@ -59,15 +59,28 @@ export default function StudentsPage() {
   const [studentToDelete, setStudentToDelete] = useState<{ id: string; name: string; studentCode: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [instituteSettings, setInstituteSettings] = useState<{
+    instituteName?: string;
+    phone?: string;
+    whatsapp?: string;
+  } | null>(null);
+
   const fetchClasses = useCallback(async () => {
     try {
-      const res = await fetch('/api/classes');
-      const json = await res.json();
-      if (json.success) {
-        setClasses(json.data);
+      const [clsRes, setRes] = await Promise.all([
+        fetch('/api/classes'),
+        fetch('/api/settings'),
+      ]);
+      const clsJson = await clsRes.json();
+      const setJson = await setRes.json();
+      if (clsJson.success) {
+        setClasses(clsJson.data);
+      }
+      if (setJson.success && setJson.data) {
+        setInstituteSettings(setJson.data);
       }
     } catch (err) {
-      console.error('Failed to load classes:', err);
+      console.error('Failed to load classes or settings:', err);
     }
   }, []);
 
@@ -169,7 +182,8 @@ export default function StudentsPage() {
 
   const handleWhatsAppChat = (s: any) => {
     const phone = s.whatsappNumber || s.mobile;
-    const msg = `Hello ${s.name}, Greetings from DPR Private Tuition!`;
+    const institute = instituteSettings?.instituteName || 'DPR Private Tuition';
+    const msg = `Hello ${s.name}, Greetings from ${institute}!`;
     const url = buildWhatsAppUrl(phone, msg);
     window.open(url, '_blank');
   };

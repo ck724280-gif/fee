@@ -5,7 +5,7 @@ import { formatYMD, startOfDay } from '@/lib/billing-engine';
 import { buildWhatsAppUrl, generateFeeReminderMessage } from '@/lib/whatsapp';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -56,6 +56,8 @@ export async function GET(
         { status: 404 }
       );
     }
+
+    const settings = await prisma.instituteSetting.findFirst();
 
     const classDefaultFee = student.class.defaultMonthlyFee;
     const actualMonthlyFee = student.feeMode === 'CUSTOM' && student.customMonthlyFee !== null
@@ -154,6 +156,8 @@ export async function GET(
     const latestUnpaidFee = student.feeRecords.find((f) => f.outstandingAmount > 0);
     let whatsappReminderUrl: string | undefined = undefined;
 
+    const origin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin || 'http://localhost:3000';
+
     if (latestUnpaidFee && (student.whatsappNumber || student.mobile)) {
       const phone = student.whatsappNumber || student.mobile;
       const msg = generateFeeReminderMessage({
@@ -162,7 +166,9 @@ export async function GET(
         dueAmount: latestUnpaidFee.outstandingAmount,
         dueDateStr: formatYMD(new Date(latestUnpaidFee.dueDate)),
         billingPeriodStr: `${formatYMD(new Date(latestUnpaidFee.billingPeriodStart))} to ${formatYMD(new Date(latestUnpaidFee.billingPeriodEnd))}`,
-        documentUrl: `https://dprtuition.vercel.app/fees/${latestUnpaidFee.id}`,
+        documentUrl: `${origin}/fees/${latestUnpaidFee.id}`,
+        instituteName: settings?.instituteName || 'DPR Private Tuition',
+        contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
       });
       whatsappReminderUrl = buildWhatsAppUrl(phone, msg);
     }
@@ -170,6 +176,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       data: {
+        instituteSettings: settings,
         student: {
           id: student.id,
           studentCode: student.studentCode,
