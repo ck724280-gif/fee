@@ -85,6 +85,7 @@ export async function getDashboardStats(
     urgentOverdueRaw,
     allPayments,
     settings,
+    pendingUpiCount,
   ] = await Promise.all([
     prismaClient.student.count(),
     prismaClient.student.count({ where: { status: StudentStatus.ACTIVE } }),
@@ -176,6 +177,7 @@ export async function getDashboardStats(
       },
     }),
     prismaClient.instituteSetting.findFirst(),
+    prismaClient.upiSubmission.count({ where: { status: 'PENDING' } }),
   ]);
 
   const kpis: DashboardKPIData = {
@@ -317,6 +319,7 @@ export async function getDashboardStats(
 
   return {
     kpis,
+    pendingUpiCount,
     charts: {
       feeStatusDistribution,
       monthlyCollectionTrend: monthlyTrend,

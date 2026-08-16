@@ -12,7 +12,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { StudentModal, ClassOption } from '@/components/modals/StudentModal';
 import { CollectFeeModal, FeeRecordSummary } from '@/components/modals/CollectFeeModal';
 import { GenerateBillingModal } from '@/components/modals/GenerateBillingModal';
-import { Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, QrCode, ArrowRight, Clock } from 'lucide-react';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -126,6 +127,37 @@ export default function DashboardPage() {
         totalOverdueAmount={kpis.overdueFees}
         urgentList={stats?.urgentOverdueList}
       />
+
+      {/* Online UPI Proof Submissions Pending Verification Banner */}
+      {Boolean(stats?.pendingUpiCount && stats.pendingUpiCount > 0) && (
+        <div className="p-4 bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white rounded-2xl border-2 border-emerald-500/40 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-bold shrink-0 shadow-lg shadow-emerald-500/30">
+              <QrCode className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider mb-0.5">
+                <Clock className="w-3 h-3 animate-spin" />
+                <span>Action Required</span>
+              </div>
+              <h3 className="text-base font-extrabold text-white">
+                {stats.pendingUpiCount} Online UPI Payment Proof{stats.pendingUpiCount > 1 ? 's' : ''} Pending Verification
+              </h3>
+              <p className="text-xs text-slate-300">
+                Students have submitted UTR transaction references. Verify with your bank statement and issue receipts.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/upi-approvals"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 shrink-0 cursor-pointer"
+          >
+            <span>Review &amp; Approve Now</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      )}
 
       {/* 8-Dimension KPI Cards */}
       <KPICards data={kpis} />

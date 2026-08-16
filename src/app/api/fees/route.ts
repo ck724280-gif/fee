@@ -106,6 +106,14 @@ export async function GET(request: NextRequest) {
             },
             orderBy: { paymentDate: 'desc' },
           },
+          upiSubmissions: {
+            where: { status: 'PENDING' },
+            select: {
+              id: true,
+              utrNumber: true,
+              submittedAt: true,
+            },
+          },
         },
         orderBy: {
           [sortBy]: sortOrder,
