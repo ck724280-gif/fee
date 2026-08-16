@@ -79,6 +79,12 @@ enum ExpenseCategory {
   OTHER
 }
 
+enum UpiSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id           String     @id @default(uuid())
   email        String     @unique
@@ -143,6 +149,7 @@ model Student {
   feeRecords       FeeRecord[]
   payments         Payment[]
   documents        Document[]
+  upiSubmissions   UpiSubmission[]
 
   @@index([classId])
   @@index([status])
@@ -151,28 +158,29 @@ model Student {
 }
 
 model FeeRecord {
-  id                 String       @id @default(uuid())
-  studentId          String       @map("student_id")
-  classId            String       @map("class_id")
-  billingPeriodStart DateTime     @map("billing_period_start")
-  billingPeriodEnd   DateTime     @map("billing_period_end")
-  dueDate            DateTime     @map("due_date")
-  baseAmount         Float        @map("base_amount")
-  admissionFeeAmount Float        @default(0) @map("admission_fee_amount")
-  discountAmount     Float        @default(0) @map("discount_amount")
-  lateFeeAmount      Float        @default(0) @map("late_fee_amount")
-  totalAmount        Float        @map("total_amount")
-  paidAmount         Float        @default(0) @map("paid_amount")
-  outstandingAmount  Float        @map("outstanding_amount")
-  status             FeeStatus    @default(UPCOMING)
-  feeMode            FeeMode      @default(DEFAULT) @map("fee_mode")
+  id                 String          @id @default(uuid())
+  studentId          String          @map("student_id")
+  classId            String          @map("class_id")
+  billingPeriodStart DateTime        @map("billing_period_start")
+  billingPeriodEnd   DateTime        @map("billing_period_end")
+  dueDate            DateTime        @map("due_date")
+  baseAmount         Float           @map("base_amount")
+  admissionFeeAmount Float           @default(0) @map("admission_fee_amount")
+  discountAmount     Float           @default(0) @map("discount_amount")
+  lateFeeAmount      Float           @default(0) @map("late_fee_amount")
+  totalAmount        Float           @map("total_amount")
+  paidAmount         Float           @default(0) @map("paid_amount")
+  outstandingAmount  Float           @map("outstanding_amount")
+  status             FeeStatus       @default(UPCOMING)
+  feeMode            FeeMode         @default(DEFAULT) @map("fee_mode")
   notes              String?
-  generatedAt        DateTime     @default(now()) @map("generated_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
+  generatedAt        DateTime        @default(now()) @map("generated_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
 
-  student            Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  class              Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student            Student         @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  class              Class           @relation(fields: [classId], references: [id], onDelete: Restrict)
   payments           Payment[]
+  upiSubmissions     UpiSubmission[]
 
   @@unique([studentId, billingPeriodStart, billingPeriodEnd], name: "uq_student_billing_period")
   @@index([studentId])
@@ -180,6 +188,29 @@ model FeeRecord {
   @@index([status])
   @@index([dueDate])
   @@map("fee_records")
+}
+
+model UpiSubmission {
+  id                String              @id @default(uuid())
+  feeRecordId       String              @map("fee_record_id")
+  studentId         String              @map("student_id")
+  utrNumber         String              @map("utr_number")
+  amount            Float
+  status            UpiSubmissionStatus @default(PENDING)
+  rejectionReason   String?             @map("rejection_reason")
+  approvedPaymentId String?             @map("approved_payment_id")
+  submittedAt       DateTime            @default(now()) @map("submitted_at")
+  reviewedAt        DateTime?           @map("reviewed_at")
+  reviewedByUserId  String?             @map("reviewed_by_user_id")
+
+  feeRecord         FeeRecord           @relation(fields: [feeRecordId], references: [id], onDelete: Cascade)
+  student           Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([feeRecordId])
+  @@index([studentId])
+  @@index([status])
+  @@index([utrNumber])
+  @@map("upi_submissions")
 }
 
 model Payment {

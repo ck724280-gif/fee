@@ -1,103 +1,123 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { recordPayment } from '@/lib/payment-service';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { feeRecordId, utrNumber, payerName, payerPhone, amount } = body;
+    const { feeId, utrNumber } = body;
 
-    if (!feeRecordId || typeof feeRecordId !== 'string') {
+    // 1. Validate required input
+    if (!feeId || typeof feeId !== 'string') {
       return NextResponse.json(
-        { success: false, error: 'Valid Fee Record ID is required' },
+        { success: false, error: 'Fee record ID is required.' },
         { status: 400 }
       );
     }
 
-    if (!utrNumber || typeof utrNumber !== 'string' || utrNumber.trim().length < 6) {
+    const cleanUtr = utrNumber ? String(utrNumber).trim() : '';
+
+    if (!cleanUtr || cleanUtr.length < 6) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Please enter a valid 12-digit UTR / UPI Reference Number (min 6 characters)',
-        },
+        { success: false, error: 'Please enter a valid 12-digit UPI Reference / UTR number (at least 6 characters).' },
         { status: 400 }
       );
     }
 
-    const cleanUtr = utrNumber.trim();
-
-    // 1. Fetch fee record
-    const fee = await prisma.feeRecord.findUnique({
-      where: { id: feeRecordId },
+    // 2. Fetch Fee Record and Student (Name and Phone are strictly taken from database, cannot be overridden by user)
+    const feeRecord = await prisma.feeRecord.findUnique({
+      where: { id: feeId },
       include: {
-        student: true,
+        student: { include: { class: true } },
         class: true,
       },
     });
 
-    if (!fee) {
+    if (!feeRecord || !feeRecord.student) {
       return NextResponse.json(
-        { success: false, error: 'Fee record not found' },
+        { success: false, error: 'Invoice or Fee record not found.' },
         { status: 404 }
       );
     }
 
-    if (fee.outstandingAmount <= 0 || fee.status === 'PAID') {
+    if (feeRecord.status === 'PAID' || feeRecord.outstandingAmount <= 0) {
       return NextResponse.json(
-        { success: false, error: 'This fee invoice has already been fully paid and settled' },
+        { success: false, error: 'This invoice has already been fully paid and settled.' },
         { status: 400 }
       );
     }
 
-    // 2. Check for duplicate UTR
-    const existingPaymentWithUtr = await prisma.payment.findFirst({
+    // 3. Check for Duplicate UTR in already settled payments
+    const existingPayment = await prisma.payment.findFirst({
       where: {
-        transactionId: cleanUtr,
-      },
-      include: {
-        feeRecord: true,
+        transactionId: { equals: cleanUtr, mode: 'insensitive' },
       },
     });
 
-    if (existingPaymentWithUtr) {
+    if (existingPayment) {
       return NextResponse.json(
         {
           success: false,
-          error: `This UTR (${cleanUtr}) has already been recorded under Receipt ${existingPaymentWithUtr.receiptNumber}.`,
+          error: `This UTR/Reference ID (${cleanUtr}) has already been approved and recorded for Receipt ${existingPayment.receiptNumber}. If this is an error, please contact the institute admin.`,
         },
-        { status: 409 }
+        { status: 400 }
       );
     }
 
-    // 3. Determine payment amount (default to outstanding balance or specified partial amount)
-    const payAmount = amount && Number(amount) > 0 ? Math.min(Number(amount), fee.outstandingAmount) : fee.outstandingAmount;
+    // 4. Check for existing PENDING submission with same UTR
+    const existingPending = await prisma.upiSubmission.findFirst({
+      where: {
+        feeRecordId: feeRecord.id,
+        status: 'PENDING',
+      },
+    });
 
-    // 4. Record payment atomically using payment-service
-    const paymentResult = await recordPayment({
-      feeRecordId: fee.id,
-      amount: payAmount,
-      paymentMethod: 'UPI',
-      transactionId: cleanUtr,
-      notes: `Online UPI Payment verified (Payer: ${payerName?.trim() || 'Parent/Student'}${payerPhone ? `, Tel: ${payerPhone.trim()}` : ''})`,
+    if (existingPending) {
+      if (existingPending.utrNumber === cleanUtr) {
+        return NextResponse.json({
+          success: true,
+          pending: true,
+          submission: existingPending,
+          message: 'Payment proof already submitted and is currently pending admin verification.',
+        });
+      }
+      // Update pending submission with new UTR if student made a typo
+      const updated = await prisma.upiSubmission.update({
+        where: { id: existingPending.id },
+        data: {
+          utrNumber: cleanUtr,
+          submittedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        pending: true,
+        submission: updated,
+        message: 'Updated payment UTR proof submitted successfully. Waiting for admin approval.',
+      });
+    }
+
+    // 5. Create new Pending UPI Submission (Pending Admin Verification)
+    const submission = await prisma.upiSubmission.create({
+      data: {
+        feeRecordId: feeRecord.id,
+        studentId: feeRecord.studentId,
+        utrNumber: cleanUtr,
+        amount: feeRecord.outstandingAmount,
+        status: 'PENDING',
+      },
     });
 
     return NextResponse.json({
       success: true,
-      message: 'Payment received and verified successfully!',
-      data: {
-        paymentId: paymentResult.payment.id,
-        receiptNumber: paymentResult.payment.receiptNumber,
-        documentToken: paymentResult.documentToken,
-        documentUrl: paymentResult.documentUrl,
-        paidAmount: paymentResult.payment.amount,
-        remainingOutstanding: paymentResult.feeRecord.outstandingAmount,
-        status: paymentResult.feeRecord.status,
-      },
+      pending: true,
+      submission,
+      message: 'Payment proof submitted successfully! The admin will verify the UTR with institute bank records and issue your official receipt.',
     });
   } catch (error: any) {
-    console.error('UTR Submission Error:', error);
+    console.error('Submit UTR API error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to verify and record UPI payment' },
+      { success: false, error: error.message || 'Failed to submit payment proof.' },
       { status: 500 }
     );
   }

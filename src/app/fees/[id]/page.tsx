@@ -48,6 +48,10 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
       payments: {
         orderBy: { paymentDate: 'desc' },
       },
+      upiSubmissions: {
+        orderBy: { submittedAt: 'desc' },
+        take: 1,
+      },
     },
   });
 
@@ -63,6 +67,10 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
           student: { include: { class: true } },
           class: true,
           payments: { orderBy: { paymentDate: 'desc' } },
+          upiSubmissions: {
+            orderBy: { submittedAt: 'desc' },
+            take: 1,
+          },
         },
       });
     }
@@ -335,6 +343,8 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
                   payeeName={upiPayee}
                   receiptPrefix={(settings as any).receiptPrefix || 'DPR-RC'}
                   customQrUrl={(settings as any).customQrUrl}
+                  studentPhone={fee.student.whatsappNumber || fee.student.mobile}
+                  existingSubmission={fee.upiSubmissions?.[0] as any}
                 />
               </div>
             )}
