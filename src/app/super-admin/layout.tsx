@@ -45,11 +45,11 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             setAdminUser(data.user);
           }
         } else {
-          router.push('/login?redirect=/super-admin');
+          router.push('/super-admin/login');
         }
       })
       .catch(() => {
-        router.push('/login?redirect=/super-admin');
+        router.push('/super-admin/login');
       });
   }, [router]);
 

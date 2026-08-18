@@ -76,13 +76,9 @@ function LoginForm() {
       }
 
       // Successful direct login
-      setSuccessMessage('Authentication successful! Loading workspace...');
+      setSuccessMessage('Authentication successful! Loading institute workspace...');
       setTimeout(() => {
-        if (data.user?.isSuperAdmin) {
-          window.location.href = redirectUrl === '/' ? '/super-admin' : redirectUrl;
-        } else {
-          window.location.href = redirectUrl;
-        }
+        window.location.href = redirectUrl;
       }, 700);
     } catch (err: any) {
       console.error('Login request failed:', err);
@@ -128,11 +124,7 @@ function LoginForm() {
 
       setSuccessMessage('2FA Verified! Loading your workspace...');
       setTimeout(() => {
-        if (data.user?.isSuperAdmin) {
-          window.location.href = redirectUrl === '/' ? '/super-admin' : redirectUrl;
-        } else {
-          window.location.href = redirectUrl;
-        }
+        window.location.href = redirectUrl;
       }, 700);
     } catch (err: any) {
       console.error('2FA verification failed:', err);
