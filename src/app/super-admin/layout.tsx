@@ -13,8 +13,6 @@ import {
   LayoutDashboard,
   LogOut,
   ChevronRight,
-  Sparkles,
-  ExternalLink,
   ShieldCheck,
   Menu,
   X,
@@ -34,13 +32,18 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   const [mobileOpen, setMobileOpen] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
 
+  // If on the login page itself, render ONLY the login page with no Super Admin sidebar or headers
+  if (pathname === '/super-admin/login') {
+    return <>{children}</>;
+  }
+
   useEffect(() => {
     fetch('/api/auth/me')
       .then((res) => res.json())
       .then((data) => {
         if (data.authenticated && data.user) {
           if (!data.user.isSuperAdmin) {
-            router.push('/');
+            router.push('/super-admin/login');
           } else {
             setAdminUser(data.user);
           }
@@ -55,7 +58,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/login';
+    window.location.href = '/super-admin/login';
   };
 
   return (
@@ -130,19 +133,6 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
               </Link>
             );
           })}
-
-          <div className="pt-4 px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Quick Actions
-          </div>
-          <Link
-            href="/"
-            className="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-indigo-300 hover:bg-indigo-500/10 border border-indigo-500/20 transition duration-200"
-          >
-            <div className="flex items-center gap-2.5">
-              <ExternalLink className="w-4 h-4 text-indigo-400" />
-              <span>Enter Org Dashboard</span>
-            </div>
-          </Link>
         </nav>
 
         {/* Admin User Profile & Sign Out */}
@@ -160,7 +150,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             <button
               onClick={handleLogout}
               title="Sign Out"
-              className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+              className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
