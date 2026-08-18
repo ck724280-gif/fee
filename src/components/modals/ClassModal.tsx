@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
+import { Switch } from '@/components/ui/Switch';
 
 export interface ClassData {
   id?: string;
@@ -161,15 +162,12 @@ export function ClassModal({
               <span className="text-xs font-bold text-slate-800">Late Fee Policy</span>
               <p className="text-[11px] text-slate-500">Apply surcharge after grace days</p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.lateFeeEnabled}
-                onChange={(e) => setFormData({ ...formData, lateFeeEnabled: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+            <Switch
+              checked={formData.lateFeeEnabled}
+              onChange={(val) => setFormData({ ...formData, lateFeeEnabled: val })}
+              color="blue"
+              size="sm"
+            />
           </div>
 
           {formData.lateFeeEnabled && (

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Alert } from '@/components/ui/Alert';
+import { Switch } from '@/components/ui/Switch';
 import {
   Settings,
   Save,
@@ -596,15 +597,12 @@ export default function SettingsPage() {
                     Enables one-tap UPI app launching (GPay, PhonePe, Paytm) and dynamic QR codes on public fee notices
                   </span>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.upiEnabled}
-                    onChange={(e) => setFormData({ ...formData, upiEnabled: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
+                <Switch
+                  checked={formData.upiEnabled}
+                  onChange={(val) => setFormData((prev) => ({ ...prev, upiEnabled: val }))}
+                  color="emerald"
+                  size="md"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
