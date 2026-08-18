@@ -173,19 +173,6 @@ export function Sidebar() {
             </motion.div>
           );
         })}
-
-        {/* Super Admin Panel Link if user is Platform Super Admin */}
-        {user?.isSuperAdmin && (
-          <div className="pt-3">
-            <Link
-              href="/super-admin"
-              className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition duration-200"
-            >
-              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
-              <span className="truncate">Super Admin Platform</span>
-            </Link>
-          </div>
-        )}
       </nav>
 
       {/* Admin User Footer with Glassmorphic Card */}

@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { Breadcrumbs } from './Breadcrumbs';
-import { Menu, Clock, Calendar, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Menu, Clock, Calendar, ShieldCheck } from 'lucide-react';
 
 export interface HeaderProps {
   onOpenMobileNav: () => void;
@@ -12,7 +11,6 @@ export interface HeaderProps {
 export function Header({ onOpenMobileNav }: HeaderProps) {
   const [time, setTime] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     const updateTime = () => {
@@ -37,18 +35,6 @@ export function Header({ onOpenMobileNav }: HeaderProps) {
 
     updateTime();
     const timer = setInterval(updateTime, 1000);
-
-    const checkMe = async () => {
-      try {
-        const res = await fetch('/api/auth/me');
-        const json = await res.json();
-        if (json.authenticated && json.user?.isSuperAdmin) {
-          setIsSuperAdmin(true);
-        }
-      } catch {}
-    };
-    checkMe();
-
     return () => clearInterval(timer);
   }, []);
 
@@ -68,19 +54,8 @@ export function Header({ onOpenMobileNav }: HeaderProps) {
         </div>
       </div>
 
-      {/* Right section: Super Admin Switcher + Live Clock */}
+      {/* Right section: System Online Status & Live Clock */}
       <div className="flex items-center gap-3">
-        {/* Super Admin Quick Link */}
-        {isSuperAdmin && (
-          <Link
-            href="/super-admin"
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-rose-500/15 to-pink-500/15 hover:from-rose-500/25 hover:to-pink-500/25 text-rose-700 border border-rose-300/80 text-xs font-bold transition shadow-xs"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-            <span>Master Admin Panel 👑</span>
-          </Link>
-        )}
-
         {/* Glowing System Online Status */}
         <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 text-emerald-700 border border-emerald-300/80 text-xs font-bold shadow-xs">
           <span className="relative flex h-2 w-2">
