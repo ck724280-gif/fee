@@ -79,10 +79,10 @@ export async function middleware(request: NextRequest) {
   // 6. Handling for Public Pages (e.g. /login, /register, /super-admin/login, /fees/[id])
   if (isPublicPage) {
     if (authPayload && (pathname === '/login' || pathname === '/register')) {
-      if (authPayload.isSuperAdmin) {
-        return NextResponse.redirect(new URL('/super-admin', request.url));
-      }
       return NextResponse.redirect(new URL('/', request.url));
+    }
+    if (authPayload && authPayload.isSuperAdmin && pathname === '/super-admin/login') {
+      return NextResponse.redirect(new URL('/super-admin', request.url));
     }
     return addSecurityHeaders(NextResponse.next());
   }

@@ -1,10 +1,10 @@
 {
-  "appId": "com.dprtuition.masteradmin",
-  "appName": "Master Admin Portal",
+  "appId": "com.dprtuition.app",
+  "appName": "Education Manager",
   "webDir": "public",
   "bundledWebRuntime": false,
   "server": {
-    "url": "https://fee-eosin.vercel.app/super-admin/login",
+    "url": "https://fee-eosin.vercel.app/login",
     "cleartext": true,
     "androidScheme": "https"
   },
