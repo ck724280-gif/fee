@@ -1,0 +1,16 @@
+{
+  "appId": "com.dprtuition.app",
+  "appName": "DPR Tuition",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://fee-eosin.vercel.app",
+    "cleartext": true,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  }
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -16,6 +16,7 @@ import {
   Settings,
   LogOut,
   Sparkles,
+  Camera,
 } from 'lucide-react';
 
 export const navigationItems = [
@@ -31,6 +32,43 @@ export const navigationItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [instituteName, setInstituteName] = useState('DPR Tuition');
+  const [tagline, setTagline] = useState('Enterprise Financial Hub');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        const json = await res.json();
+        if (json.success && json.data) {
+          if (json.data.instituteName) setInstituteName(json.data.instituteName);
+          if (json.data.tagline) setTagline(json.data.tagline);
+          setLogoUrl(json.data.logoUrl || null);
+        }
+      } catch (e) {
+        // Fallback to defaults
+      }
+    };
+
+    fetchSettings();
+
+    const handleSettingsUpdate = (e: any) => {
+      const data = e.detail;
+      if (data) {
+        if (data.instituteName) setInstituteName(data.instituteName);
+        if (data.tagline) setTagline(data.tagline);
+        setLogoUrl(data.logoUrl || null);
+      } else {
+        fetchSettings();
+      }
+    };
+
+    window.addEventListener('institute-settings-updated', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('institute-settings-updated', handleSettingsUpdate);
+    };
+  }, []);
 
   return (
     <aside className="hidden lg:flex lg:flex-col w-64 bg-slate-950/95 backdrop-blur-2xl border-r border-slate-800/80 text-slate-300 min-h-screen shrink-0 select-none relative overflow-hidden sidebar-dot-pattern">
@@ -38,26 +76,45 @@ export function Sidebar() {
       <div className="absolute top-0 -left-16 w-52 h-52 bg-gradient-to-br from-blue-600/20 via-indigo-600/10 to-transparent rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-16 -right-16 w-52 h-52 bg-gradient-to-tl from-emerald-600/20 via-cyan-600/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
-      {/* Brand Header with Animated Multi-Tone Gradient Logo */}
-      <div className="p-5 border-b border-slate-800/80 flex items-center gap-3 relative z-10">
-        <motion.div
-          whileHover={{ scale: 1.1, rotate: 6 }}
-          whileTap={{ scale: 0.92 }}
-          className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/30 flex items-center justify-center cursor-pointer"
+      {/* Brand Header with Animated Multi-Tone Gradient Logo / Custom Uploaded Logo */}
+      <div className="p-5 border-b border-slate-800/80 flex items-center justify-between relative z-10">
+        <Link
+          href="/settings"
+          title="Click to customize Logo & Institute Branding"
+          className="flex items-center gap-3 min-w-0 group/brand"
         >
-          <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-cyan-300 font-black">
-            <Sparkles className="w-5 h-5 animate-spin text-cyan-400" />
+          <motion.div
+            whileHover={{ scale: 1.08, rotate: 3 }}
+            whileTap={{ scale: 0.94 }}
+            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/30 flex items-center justify-center cursor-pointer shrink-0 relative overflow-hidden ring-1 ring-white/20"
+          >
+            {logoUrl && logoUrl.trim().length > 0 ? (
+              <img
+                src={logoUrl}
+                alt="Institute Logo"
+                className="w-full h-full object-cover rounded-[14px]"
+              />
+            ) : (
+              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-cyan-300 font-black">
+                <Sparkles className="w-5 h-5 text-cyan-400" />
+              </div>
+            )}
+            {/* Quick hover indicator to change logo */}
+            <div className="absolute inset-0 bg-black/60 rounded-[14px] opacity-0 group-hover/brand:opacity-100 flex items-center justify-center transition-opacity">
+              <Camera className="w-4 h-4 text-white" />
+            </div>
+          </motion.div>
+
+          <div className="flex flex-col min-w-0">
+            <span className="font-extrabold text-base text-white tracking-tight flex items-center gap-1.5 truncate group-hover/brand:text-blue-300 transition-colors">
+              <span className="truncate">{instituteName}</span>
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-pulse shrink-0" />
+            </span>
+            <span className="text-[11px] text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-300 font-semibold tracking-wide truncate">
+              {tagline}
+            </span>
           </div>
-        </motion.div>
-        <div className="flex flex-col min-w-0">
-          <span className="font-extrabold text-base text-white tracking-tight flex items-center gap-1.5">
-            DPR Tuition
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-pulse" />
-          </span>
-          <span className="text-[11px] text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-300 font-semibold tracking-wide">
-            Enterprise Financial Hub
-          </span>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation Links with Stagger & Spring Physics */}

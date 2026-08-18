@@ -42,8 +42,6 @@ function TiltKPICard({
     cardBorderHover: string;
     iconGradientBg: string;
     iconTextColor: string;
-    sparklinePoints: string;
-    sparklineStroke: string;
     trendLabel: string;
     trendBadge: string;
     glowLight: string;
@@ -153,29 +151,15 @@ function TiltKPICard({
           </div>
         </div>
 
-        {/* Sparkline Trendline & Subtitle Footer */}
+        {/* Subtitle & Badge Footer (Without Sparkline Chart Line) */}
         <div className="mt-4 pt-3.5 border-t border-slate-100/90 flex items-center justify-between gap-2 relative z-10">
           <span className="text-xs text-slate-500 font-medium truncate">
             {card.subtitle}
           </span>
 
-          {/* Glowing Mini Sparkline */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <svg className="w-16 h-5 overflow-visible" viewBox="0 0 60 20">
-              <path
-                d={card.sparklinePoints}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={card.sparklineStroke}
-              />
-            </svg>
-            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ${card.trendBadge}`}>
-              {card.trendLabel}
-            </span>
-          </div>
+          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs shrink-0 ${card.trendBadge}`}>
+            {card.trendLabel}
+          </span>
         </div>
       </div>
     </motion.div>
@@ -194,8 +178,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-blue-400 hover:shadow-blue-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-blue-500 to-cyan-400 shadow-blue-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,15 L15,9 L30,12 L45,4 L60,7',
-      sparklineStroke: 'text-blue-500',
       trendLabel: 'Enrollment',
       trendBadge: 'bg-blue-50 text-blue-700 border border-blue-200/80',
       glowLight: 'bg-blue-500',
@@ -210,8 +192,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-emerald-400 hover:shadow-emerald-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-emerald-500 to-teal-400 shadow-emerald-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,18 L15,13 L30,8 L45,5 L60,2',
-      sparklineStroke: 'text-emerald-500',
       trendLabel: '% Active',
       trendBadge: 'bg-emerald-50 text-emerald-700 border border-emerald-200/80',
       glowLight: 'bg-emerald-500',
@@ -226,8 +206,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-green-400 hover:shadow-green-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-green-500 to-emerald-400 shadow-green-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,14 L15,16 L30,9 L45,4 L60,1',
-      sparklineStroke: 'text-green-500',
       trendLabel: 'Today Inflow',
       trendBadge: 'bg-green-50 text-green-700 border border-green-200/80',
       glowLight: 'bg-green-500',
@@ -242,8 +220,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-indigo-400 hover:shadow-indigo-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-indigo-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,16 L15,12 L30,14 L45,6 L60,2',
-      sparklineStroke: 'text-indigo-500',
       trendLabel: 'Month Trend',
       trendBadge: 'bg-indigo-50 text-indigo-700 border border-indigo-200/80',
       glowLight: 'bg-indigo-500',
@@ -258,8 +234,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-amber-400 hover:shadow-amber-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-amber-500 to-orange-400 shadow-amber-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,7 L15,11 L30,9 L45,15 L60,13',
-      sparklineStroke: 'text-amber-500',
       trendLabel: 'Pending Due',
       trendBadge: 'bg-amber-50 text-amber-700 border border-amber-200/80',
       glowLight: 'bg-amber-500',
@@ -274,8 +248,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-rose-400 hover:shadow-rose-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-rose-600 to-red-500 shadow-rose-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,5 L15,8 L30,6 L45,14 L60,18',
-      sparklineStroke: 'text-rose-500',
       trendLabel: 'Arrears Alert',
       trendBadge: 'bg-rose-50 text-rose-700 border border-rose-200/80',
       glowLight: 'bg-rose-500',
@@ -290,8 +262,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-purple-400 hover:shadow-purple-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-purple-600 to-fuchsia-500 shadow-purple-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,14 L15,10 L30,13 L45,7 L60,11',
-      sparklineStroke: 'text-purple-500',
       trendLabel: 'Installments',
       trendBadge: 'bg-purple-50 text-purple-700 border border-purple-200/80',
       glowLight: 'bg-purple-500',
@@ -306,8 +276,6 @@ export function KPICards({ data }: KPICardsProps) {
       cardBorderHover: 'hover:border-cyan-400 hover:shadow-cyan-500/15',
       iconGradientBg: 'bg-gradient-to-tr from-cyan-500 to-teal-400 shadow-cyan-500/30 text-white',
       iconTextColor: 'text-white',
-      sparklinePoints: 'M0,18 L15,12 L30,15 L45,5 L60,2',
-      sparklineStroke: 'text-cyan-500',
       trendLabel: 'New Intake',
       trendBadge: 'bg-cyan-50 text-cyan-700 border border-cyan-200/80',
       glowLight: 'bg-cyan-500',

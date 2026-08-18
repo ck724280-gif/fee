@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -20,6 +20,10 @@ import {
   EyeOff,
   AlertTriangle,
   CreditCard,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Sparkles,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -31,6 +35,7 @@ export default function SettingsPage() {
     phone: '+91 98765 43210',
     whatsapp: '+91 98765 43210',
     email: 'info@dprtuition.com',
+    logoUrl: '',
     receiptPrefix: 'DPR-RC',
     currencySymbol: '₹',
     defaultGraceDays: 0,
@@ -56,12 +61,15 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingInstitute, setIsSavingInstitute] = useState(false);
   const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [isProcessingLogo, setIsProcessingLogo] = useState(false);
 
   const [instituteSuccess, setInstituteSuccess] = useState<string | null>(null);
   const [instituteError, setInstituteError] = useState<string | null>(null);
 
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -83,6 +91,7 @@ export default function SettingsPage() {
             phone: settingsJson.data.phone || '',
             whatsapp: settingsJson.data.whatsapp || '',
             email: settingsJson.data.email || '',
+            logoUrl: settingsJson.data.logoUrl || '',
             receiptPrefix: settingsJson.data.receiptPrefix || 'DPR-RC',
             currencySymbol: settingsJson.data.currencySymbol || '₹',
             defaultGraceDays: settingsJson.data.defaultGraceDays ?? 0,
@@ -110,6 +119,72 @@ export default function SettingsPage() {
     loadData();
   }, []);
 
+  // Image Upload and Optimization Handler
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setInstituteError('Please select a valid image file (PNG, JPG, SVG, WebP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setInstituteError('Image size should be less than 5MB.');
+      return;
+    }
+
+    setIsProcessingLogo(true);
+    setInstituteError(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize and optimize image to max 300x300 for snappy loading
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 300;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const optimizedBase64 = canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.9);
+          setFormData((prev) => ({ ...prev, logoUrl: optimizedBase64 }));
+        }
+        setIsProcessingLogo(false);
+      };
+      img.onerror = () => {
+        setIsProcessingLogo(false);
+        setInstituteError('Failed to process image. Please try another file.');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setFormData((prev) => ({ ...prev, logoUrl: '' }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   // Handler for Institute Settings
   const handleInstituteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +204,13 @@ export default function SettingsPage() {
         throw new Error(json.error || 'Failed to update institute settings');
       }
 
-      setInstituteSuccess('Institute configuration saved successfully!');
+      setInstituteSuccess('Institute configuration & logo saved successfully!');
+      
+      // Dispatch event so Sidebar and Navigation immediately reflect new Logo & Name
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('institute-settings-updated', { detail: json.data }));
+      }
+
       setTimeout(() => setInstituteSuccess(null), 4000);
     } catch (err: any) {
       setInstituteError(err.message || 'Error updating institute settings');
@@ -211,7 +292,7 @@ export default function SettingsPage() {
           Settings & Administration
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-          Manage admin login credentials, password security, institute branding, and fee policies
+          Manage admin login credentials, password security, institute branding & logo, and fee policies
         </p>
       </div>
 
@@ -337,13 +418,108 @@ export default function SettingsPage() {
       <div className="space-y-4 pt-4 border-t border-slate-200">
         <div className="flex items-center gap-2">
           <Building className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-bold text-slate-900">Institute Information & Invoicing</h2>
+          <h2 className="text-lg font-bold text-slate-900">Institute Information & Branding</h2>
         </div>
 
         {instituteSuccess && <Alert variant="success">{instituteSuccess}</Alert>}
         {instituteError && <Alert variant="danger">{instituteError}</Alert>}
 
         <form onSubmit={handleInstituteSubmit} className="space-y-6">
+          {/* Logo Upload & Customization Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-blue-600" />
+                <span>Institute Logo & Sidebar Avatar</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 text-white border border-slate-800">
+                {/* Live Logo Preview Box (Matching Sidebar Style) */}
+                <div className="flex flex-col items-center gap-2 shrink-0">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-pink-500 p-0.5 shadow-xl shadow-indigo-500/30 flex items-center justify-center overflow-hidden ring-2 ring-white/20 relative group">
+                    {formData.logoUrl && formData.logoUrl.trim().length > 0 ? (
+                      <img
+                        src={formData.logoUrl}
+                        alt="Institute Logo Preview"
+                        className="w-full h-full object-cover rounded-[14px]"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-cyan-300">
+                        <Sparkles className="w-7 h-7 text-cyan-400" />
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                    {formData.logoUrl ? 'Custom Logo' : 'Default Icon'}
+                  </span>
+                </div>
+
+                {/* Upload & Controls */}
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Change Institute Logo</span>
+                      <span className="text-[10px] font-normal px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full border border-blue-400/30">
+                        Appears in Sidebar, Header & Invoices
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Upload your coaching institute logo or tuition brand icon. (PNG, JPG, WebP, SVG supported).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                      id="logo-file-upload"
+                    />
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      isLoading={isProcessingLogo}
+                      leftIcon={<Upload className="w-4 h-4" />}
+                    >
+                      Choose Image File
+                    </Button>
+
+                    {formData.logoUrl && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleRemoveLogo}
+                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border-rose-800/40"
+                        leftIcon={<Trash2 className="w-4 h-4" />}
+                      >
+                        Reset to Default
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                      Or Direct Image URL
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://your-domain.com/logo.png"
+                      value={formData.logoUrl}
+                      onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Branding & Identification */}
           <Card>
             <CardHeader>
