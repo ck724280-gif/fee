@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Building2,
   Users,
@@ -17,14 +18,45 @@ import {
   ShieldCheck,
   GraduationCap,
   Clock,
+  Edit2,
+  Trash2,
+  X,
+  Plus,
+  Power,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
+
+const ORG_TYPES = [
+  { id: 'PRIVATE_TUITION', label: 'Private Tuition' },
+  { id: 'COACHING', label: 'Coaching Institute' },
+  { id: 'SCHOOL', label: 'School' },
+  { id: 'TUTORIAL', label: 'Tutorial Centre' },
+  { id: 'EDUCATIONAL_INSTITUTE', label: 'Educational Institute' },
+];
 
 export default function OrgDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [org, setOrg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Modal States
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Edit Form Data
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    organizationType: 'PRIVATE_TUITION',
+    status: 'ACTIVE',
+    plan: 'BASIC',
+    pricePerCycle: 0,
+    billingCycle: 'MONTHLY',
+  });
 
   const fetchOrgDetails = async () => {
     try {
@@ -33,6 +65,16 @@ export default function OrgDetailPage({ params }: { params: Promise<{ id: string
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed to fetch organization details');
       setOrg(json.organization);
+
+      const sub = json.organization?.subscriptions?.[0];
+      setEditFormData({
+        name: json.organization?.name || '',
+        organizationType: json.organization?.organizationType || 'PRIVATE_TUITION',
+        status: json.organization?.status || 'ACTIVE',
+        plan: sub?.plan || 'BASIC',
+        pricePerCycle: sub?.pricePerCycle || 0,
+        billingCycle: sub?.billingCycle || 'MONTHLY',
+      });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -59,6 +101,51 @@ export default function OrgDetailPage({ params }: { params: Promise<{ id: string
       fetchOrgDetails();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const res = await fetch(`/api/super-admin/organizations/${org.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to update organization');
+
+      setSuccessMsg(`Organization "${editFormData.name}" updated successfully!`);
+      setEditModalOpen(false);
+      fetchOrgDetails();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!org) return;
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const res = await fetch(`/api/super-admin/organizations/${org.id}`, {
+        method: 'DELETE',
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to delete organization');
+
+      router.push('/super-admin/organizations');
+    } catch (err: any) {
+      setError(err.message);
+      setSubmitting(false);
     }
   };
 
@@ -106,98 +193,144 @@ export default function OrgDetailPage({ params }: { params: Promise<{ id: string
         <span>Back to Organizations List</span>
       </Link>
 
-      {/* Header Banner */}
-      <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Alerts */}
+      {successMsg && (
+        <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-semibold">{successMsg}</span>
+          </div>
+          <button onClick={() => setSuccessMsg('')} className="text-slate-400 hover:text-white cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="font-semibold">{error}</span>
+          </div>
+          <button onClick={() => setError('')} className="text-slate-400 hover:text-white cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Header Banner with Full Action Controls */}
+      <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xl">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-extrabold text-2xl shadow-lg shadow-indigo-500/10">
             {org.name.charAt(0)}
           </div>
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-2xl font-extrabold text-white">{org.name}</h1>
-              <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/20">
+              <h1 className="text-2xl font-black text-white">{org.name}</h1>
+              <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/20 uppercase tracking-wider">
                 {org.organizationType.replace(/_/g, ' ')}
               </span>
               <span
                 className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
                   isSuspended
-                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
                     : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                 }`}
               >
                 {org.status}
               </span>
             </div>
-            <div className="text-xs text-slate-400 mt-1 flex items-center gap-3 font-mono">
+            <div className="text-xs text-slate-400 mt-1 flex items-center gap-3 font-mono flex-wrap">
               <span>Slug: {org.slug}</span>
               <span>•</span>
-              <span>Org ID: {org.id}</span>
+              <span className="text-slate-500">Org ID: {org.id}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Action Buttons: Edit, Suspend, Delete */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Edit Button */}
+          <button
+            onClick={() => setEditModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/20 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            <span>Edit Organization</span>
+          </button>
+
+          {/* Suspend / Reactivate */}
           <button
             onClick={handleToggleStatus}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
               isSuspended
                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
-                : 'bg-rose-500/15 text-rose-300 border-rose-500/30 hover:bg-rose-500/25'
+                : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
             }`}
           >
-            {isSuspended ? 'Reactivate Tenant' : 'Suspend Tenant Access'}
+            <Power className="w-3.5 h-3.5" />
+            <span>{isSuspended ? 'Reactivate Tenant' : 'Suspend Tenant'}</span>
+          </button>
+
+          {/* Delete Button */}
+          <button
+            onClick={() => setDeleteModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            title="Permanently Delete Tenant"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete</span>
           </button>
         </div>
       </div>
 
-      {successMsg && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{successMsg}</span>
+      {/* KPI Stats Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Enrolled Students</span>
+          <div className="text-2xl font-bold text-white mt-1">{org._count?.students || 0}</div>
         </div>
-      )}
-
-      {/* Grid: Stats & Subscriptions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="text-xs text-slate-400">Total Enrolled Students</div>
-          <div className="text-2xl font-extrabold text-white mt-1">{org._count?.students || 0}</div>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Active Batches / Classes</span>
+          <div className="text-2xl font-bold text-white mt-1">{org.classes?.length || 0}</div>
         </div>
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="text-xs text-slate-400">Active Batches / Classes</div>
-          <div className="text-2xl font-extrabold text-white mt-1">{org._count?.classes || 0}</div>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Fee Invoices Generated</span>
+          <div className="text-2xl font-bold text-white mt-1">{org._count?.feeRecords || 0}</div>
         </div>
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="text-xs text-slate-400">Fee Invoices Generated</div>
-          <div className="text-2xl font-extrabold text-white mt-1">{org._count?.feeRecords || 0}</div>
-        </div>
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="text-xs text-slate-400">Payments Recorded</div>
-          <div className="text-2xl font-extrabold text-white mt-1">{org._count?.payments || 0}</div>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Payments Recorded</span>
+          <div className="text-2xl font-bold text-emerald-400 mt-1">{org._count?.payments || 0}</div>
         </div>
       </div>
 
-      {/* Two Column Layout: Members vs Subscriptions */}
+      {/* Two-Column Grid: Members & Subscriptions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Members List */}
-        <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 space-y-4">
-          <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <Users className="w-4 h-4 text-indigo-400" />
-            <span>Organization Members & Staff</span>
-          </h2>
+        {/* Members & Staff */}
+        <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-white font-bold text-sm">
+              <Users className="w-4 h-4 text-rose-500" />
+              <span>Organization Members &amp; Staff</span>
+            </div>
+            <span className="text-xs text-slate-500 font-medium">{org.members?.length || 0} member(s)</span>
+          </div>
 
-          <div className="divide-y divide-slate-800">
+          <div className="space-y-3">
             {org.members?.map((m: any) => (
-              <div key={m.id} className="py-3 flex items-center justify-between">
+              <div
+                key={m.id}
+                className="p-3.5 rounded-2xl bg-slate-800/40 border border-slate-800/80 flex items-center justify-between"
+              >
                 <div>
-                  <div className="font-bold text-slate-200 text-xs">{m.user?.name}</div>
-                  <div className="text-[11px] text-slate-400">{m.user?.email}</div>
+                  <div className="font-bold text-white text-xs">{m.user?.name}</div>
+                  <div className="text-[11px] text-slate-400 font-mono">{m.user?.email}</div>
                   {m.user?.mobile && (
-                    <div className="text-[10px] text-slate-500">{m.user?.mobile}</div>
+                    <div className="text-[10px] text-slate-500">{m.user.mobile}</div>
                   )}
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                  <span className="text-[10px] font-bold text-slate-300 bg-slate-700/50 px-2 py-0.5 rounded-md border border-slate-600/50">
                     {m.role}
                   </span>
                   <div className="text-[10px] text-slate-500 mt-1">
@@ -209,65 +342,249 @@ export default function OrgDetailPage({ params }: { params: Promise<{ id: string
           </div>
         </div>
 
-        {/* Subscription & Billing Details */}
-        <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 space-y-4">
-          <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-rose-400" />
-            <span>Active Subscription Plan</span>
-          </h2>
-
-          {currentSub ? (
-            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-base font-extrabold text-white">{currentSub.plan} Plan</div>
-                  <div className="text-xs text-slate-400">
-                    ₹{currentSub.pricePerCycle} per {currentSub.billingCycle?.toLowerCase()}
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                  {currentSub.status}
-                </span>
+        {/* Active Subscription Plan */}
+        <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <CreditCard className="w-4 h-4 text-rose-500" />
+                <span>Active Subscription Plan</span>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800">
-                <div>
-                  <span className="text-slate-500">Start Date:</span>{' '}
-                  <span className="text-slate-300 font-medium">
-                    {new Date(currentSub.startDate).toLocaleDateString('en-IN')}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-500">Expiry Date:</span>{' '}
-                  <span className="text-slate-300 font-medium">
-                    {new Date(currentSub.expiryDate).toLocaleDateString('en-IN')}
-                  </span>
-                </div>
-              </div>
-
-              {currentSub.payments && currentSub.payments.length > 0 && (
-                <div className="pt-2 border-t border-slate-800">
-                  <div className="text-[11px] font-bold text-slate-400 mb-1.5">Payment History</div>
-                  <div className="space-y-1">
-                    {currentSub.payments.map((p: any) => (
-                      <div key={p.id} className="flex items-center justify-between text-[10px] text-slate-300">
-                        <span>
-                          ₹{p.amount} via {p.paymentMethod} (Ref: {p.referenceNumber || 'N/A'})
-                        </span>
-                        <span className="text-slate-500">
-                          {new Date(p.paymentDate).toLocaleDateString('en-IN')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={() => setEditModalOpen(true)}
+                className="text-xs text-rose-400 hover:text-rose-300 font-semibold cursor-pointer flex items-center gap-1"
+              >
+                <Edit2 className="w-3 h-3" />
+                <span>Edit Plan</span>
+              </button>
             </div>
-          ) : (
-            <div className="text-xs text-slate-500 py-4">No active subscription plan configured.</div>
-          )}
+
+            {currentSub ? (
+              <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-extrabold text-white">
+                      {currentSub.plan} Plan
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      ₹{currentSub.pricePerCycle.toLocaleString('en-IN')} per {currentSub.billingCycle?.toLowerCase()}
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                      currentSub.status === 'ACTIVE'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    }`}
+                  >
+                    {currentSub.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400 border-t border-slate-700/60 pt-3">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Start Date:</span>
+                    <span className="font-semibold text-slate-200">
+                      {new Date(currentSub.startDate).toLocaleDateString('en-IN')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Expiry Date:</span>
+                    <span className="font-semibold text-rose-400">
+                      {new Date(currentSub.expiryDate).toLocaleDateString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-slate-500 text-xs">
+                No active subscription record found.
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+            <span>SaaS Payments Recorded: {currentSub?.payments?.length || 0}</span>
+            <Link
+              href="/super-admin/subscriptions"
+              className="text-rose-400 hover:text-rose-300 font-semibold inline-flex items-center gap-1"
+            >
+              <span>Manage Billing</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
       </div>
+
+      {/* Edit Organization Modal */}
+      <AnimatePresence>
+        {editModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-2 text-white font-bold text-base">
+                  <Edit2 className="w-4 h-4 text-blue-400" />
+                  <span>Edit Organization: {org.name}</span>
+                </div>
+                <button
+                  onClick={() => setEditModalOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEdit} className="mt-4 space-y-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                    Institute Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                      Organization Type
+                    </label>
+                    <select
+                      value={editFormData.organizationType}
+                      onChange={(e) => setEditFormData({ ...editFormData, organizationType: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
+                    >
+                      {ORG_TYPES.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                      Account Status
+                    </label>
+                    <select
+                      value={editFormData.status}
+                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
+                    >
+                      <option value="ACTIVE">Active</option>
+                      <option value="SUSPENDED">Suspended</option>
+                      <option value="DEACTIVATED">Deactivated</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                      SaaS Plan Tier
+                    </label>
+                    <select
+                      value={editFormData.plan}
+                      onChange={(e) => setEditFormData({ ...editFormData, plan: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
+                    >
+                      <option value="BASIC">Basic</option>
+                      <option value="STARTER">Starter</option>
+                      <option value="PROFESSIONAL">Professional</option>
+                      <option value="ENTERPRISE">Enterprise</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                      Custom Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editFormData.pricePerCycle}
+                      onChange={(e) => setEditFormData({ ...editFormData, pricePerCycle: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditModalOpen(false)}
+                    className="px-3.5 py-2 rounded-xl text-slate-400 hover:text-white text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Save Changes</span>}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border border-rose-500/40 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative"
+            >
+              <div className="flex items-center gap-3 text-rose-400 font-bold text-base pb-3 border-b border-slate-800">
+                <AlertTriangle className="w-5 h-5 text-rose-500" />
+                <span>Confirm Organization Deletion</span>
+              </div>
+
+              <div className="py-4 text-xs text-slate-300 space-y-2">
+                <p>
+                  Are you sure you want to permanently delete <strong className="text-white">"{org.name}"</strong>?
+                </p>
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-300 text-[11px]">
+                  ⚠️ <strong>Warning:</strong> This will delete all student records, fee structures, classes, and subscription history associated with this organization.
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl text-slate-400 hover:text-white text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Yes, Delete Organization</span>}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
