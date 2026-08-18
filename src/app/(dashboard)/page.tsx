@@ -9,12 +9,11 @@ import { MonthlyTrendChart } from '@/components/dashboard/MonthlyTrendChart';
 import { FeeStatusDonutChart } from '@/components/dashboard/FeeStatusDonutChart';
 import { ClassDistributionChart } from '@/components/dashboard/ClassDistributionChart';
 import { RecentPaymentsTable } from '@/components/dashboard/RecentPaymentsTable';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { StudentModal, ClassOption } from '@/components/modals/StudentModal';
 import { CollectFeeModal, FeeRecordSummary } from '@/components/modals/CollectFeeModal';
 import { GenerateBillingModal } from '@/components/modals/GenerateBillingModal';
 import Link from 'next/link';
-import { QrCode, ArrowRight, Clock, Sparkles, Activity, Layers } from 'lucide-react';
+import { QrCode, ArrowRight, Clock, Sparkles, Activity, Layers, BarChart3, PieChart, Users2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -91,16 +90,16 @@ export default function DashboardPage() {
   if (isLoading) {
     return (
       <div className="space-y-6 animate-pulse">
-        <div className="h-16 bg-slate-200/70 rounded-2xl w-1/3" />
+        <div className="h-16 bg-slate-200/70 rounded-3xl w-1/3" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(8)].map((_, i) => (
             <div key={i} className="h-32 bg-slate-200/60 rounded-2xl" />
           ))}
         </div>
-        <div className="h-20 bg-slate-200/60 rounded-2xl" />
+        <div className="h-20 bg-slate-200/60 rounded-3xl" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 h-80 bg-slate-200/60 rounded-2xl" />
-          <div className="lg:col-span-1 h-80 bg-slate-200/60 rounded-2xl" />
+          <div className="lg:col-span-2 h-80 bg-slate-200/60 rounded-3xl" />
+          <div className="lg:col-span-1 h-80 bg-slate-200/60 rounded-3xl" />
         </div>
       </div>
     );
@@ -119,30 +118,31 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 relative z-10">
-      {/* Top Hero Section with Animated Badge & Gradient Header */}
+      {/* Top Hero Section with Shimmering Gradient Title & Status Badges */}
       <motion.div
         initial={{ opacity: 0, y: -15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white/60 backdrop-blur-xl p-5 rounded-3xl border border-white/80 shadow-xs"
       >
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-blue-700 text-xs font-bold mb-1.5 shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-spin" />
-            <span>Smart Automated Tuition System</span>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-pink-500/10 border border-indigo-200/80 text-indigo-700 text-xs font-extrabold mb-1.5 shadow-2xs">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
+            <span className="gradient-text-vivid">Automated Financial Intelligence System</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
             <span>Institute Command Center</span>
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/80 animate-pulse" />
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-            DPR Private Tuition — Real-time Financial Ledger &amp; Student Operations
+            DPR Private Tuition — Academic Operations &amp; Real-time Multi-ledger Analytics
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 border border-slate-200/80 backdrop-blur-md shadow-xs text-xs font-semibold text-slate-700">
-            <Activity className="w-4 h-4 text-emerald-500 animate-pulse" />
-            <span>{kpis.activeStudents} Students Active</span>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 shadow-xs text-xs font-bold text-emerald-800">
+            <Activity className="w-4 h-4 text-emerald-600 animate-pulse" />
+            <span>{kpis.activeStudents} Active Students</span>
           </div>
         </div>
       </motion.div>
@@ -160,32 +160,33 @@ export default function DashboardPage() {
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
-          className="p-4.5 bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 text-white rounded-2xl border-2 border-emerald-500/50 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 relative overflow-hidden"
+          className="p-5 bg-gradient-to-r from-slate-950 via-emerald-950 to-slate-950 text-white rounded-3xl border-2 border-emerald-400/80 shadow-2xl shadow-emerald-500/20 flex flex-col sm:flex-row items-center justify-between gap-5 relative overflow-hidden ring-4 ring-emerald-500/10"
         >
-          {/* Ambient Glow */}
-          <div className="absolute -right-10 -top-10 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
+          {/* Ambient Glow Orbs */}
+          <div className="absolute -right-10 -top-10 w-48 h-48 bg-emerald-500/25 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-teal-500/20 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="flex items-center gap-3.5 relative z-10">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-lg shadow-emerald-500/30">
-              <QrCode className="w-6 h-6" />
+          <div className="flex items-center gap-4 relative z-10">
+            <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-emerald-400 via-teal-400 to-cyan-400 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-lg shadow-emerald-400/40 ring-4 ring-emerald-300/30">
+              <QrCode className="w-7 h-7" />
             </div>
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-emerald-400/30">
-                <Clock className="w-3 h-3 animate-spin" />
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider mb-1.5 border border-emerald-400/40">
+                <Clock className="w-3.5 h-3.5 animate-spin" />
                 <span>Verification Required</span>
               </div>
-              <h3 className="text-base font-extrabold text-white tracking-tight">
-                {stats.pendingUpiCount} Online UPI Payment Proof{stats.pendingUpiCount > 1 ? 's' : ''} Pending Review
+              <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
+                {stats.pendingUpiCount} Online UPI Payment Proof{stats.pendingUpiCount > 1 ? 's' : ''} Awaiting Approval
               </h3>
               <p className="text-xs text-slate-300 font-medium">
-                Students submitted UTR transaction codes. Match with bank statement &amp; approve receipts.
+                Students submitted 12-digit UTR transaction codes. Match with bank statement &amp; approve monotonic receipts.
               </p>
             </div>
           </div>
 
           <Link
             href="/payments?tab=approvals"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/25 shrink-0 cursor-pointer active:scale-95 relative z-10"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300 hover:from-emerald-300 hover:to-cyan-200 text-slate-950 font-black text-xs sm:text-sm transition-all shadow-xl shadow-emerald-500/30 shrink-0 cursor-pointer active:scale-95 relative z-10"
           >
             <span>Review &amp; Approve Now</span>
             <ArrowRight className="w-4 h-4" />
@@ -208,21 +209,26 @@ export default function DashboardPage() {
       {/* Analytics Visualizations Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Monthly Collection Trend (2 Cols) */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-200/90 bg-white/80 backdrop-blur-xl p-5 shadow-xs">
-          <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
-            <h3 className="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-600" />
-              Monthly Collection &amp; Invoiced Trajectory
+        <div className="lg:col-span-2 rounded-3xl border border-white/90 bg-white/90 backdrop-blur-2xl p-6 shadow-xs">
+          <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-slate-100/90">
+            <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center">
+                <BarChart3 className="w-3.5 h-3.5" />
+              </div>
+              <span>Monthly Collection &amp; Invoiced Trajectory</span>
             </h3>
           </div>
           <MonthlyTrendChart data={stats?.charts?.monthlyCollectionTrend || []} />
         </div>
 
         {/* Fee Status Breakdown (1 Col) */}
-        <div className="lg:col-span-1 rounded-2xl border border-slate-200/90 bg-white/80 backdrop-blur-xl p-5 shadow-xs">
-          <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
-            <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-              Fee Status Distribution
+        <div className="lg:col-span-1 rounded-3xl border border-white/90 bg-white/90 backdrop-blur-2xl p-6 shadow-xs">
+          <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-slate-100/90">
+            <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                <PieChart className="w-3.5 h-3.5" />
+              </div>
+              <span>Fee Status Distribution</span>
             </h3>
           </div>
           <FeeStatusDonutChart data={stats?.charts?.feeStatusDistribution || []} />
@@ -231,10 +237,13 @@ export default function DashboardPage() {
 
       {/* Secondary Grid: Class Distribution & Recent Payments */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 rounded-2xl border border-slate-200/90 bg-white/80 backdrop-blur-xl p-5 shadow-xs">
-          <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
-            <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-              Class Cohort Distribution
+        <div className="lg:col-span-1 rounded-3xl border border-white/90 bg-white/90 backdrop-blur-2xl p-6 shadow-xs">
+          <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-slate-100/90">
+            <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-lg bg-violet-500/10 text-violet-600 flex items-center justify-center">
+                <Users2 className="w-3.5 h-3.5" />
+              </div>
+              <span>Class Cohort Distribution</span>
             </h3>
           </div>
           <ClassDistributionChart data={stats?.charts?.classDistribution || []} />

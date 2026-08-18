@@ -13,10 +13,12 @@ export default function DashboardLayout({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50/90 flex flex-row relative overflow-x-hidden">
-      {/* Subtle Aurora Ambient Light Spheres (CSS Only) */}
-      <div className="aurora-glow-1 top-[-100px] left-[200px]" />
-      <div className="aurora-glow-2 top-[300px] right-[-100px]" />
+    <div className="min-h-screen bg-slate-100/70 flex flex-row relative overflow-x-hidden">
+      {/* 3D Multi-Tone Ambient Light Spheres (CSS Only - Ultra High Performance) */}
+      <div className="aurora-glow-1 -top-24 left-[15%]" />
+      <div className="aurora-glow-2 top-[32%] -right-20" />
+      <div className="aurora-glow-3 top-[65%] left-[25%]" />
+      <div className="aurora-glow-4 -bottom-20 right-[20%]" />
 
       {/* Desktop Navigation Sidebar */}
       <Sidebar />

@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   Receipt,
   UserPlus,
-  ArrowUpRight,
 } from 'lucide-react';
 
 export interface KPICardsProps {
@@ -40,12 +39,14 @@ function TiltKPICard({
     subtitle: string;
     icon: any;
     gradient: string;
-    borderGlow: string;
-    iconBg: string;
-    iconColor: string;
+    cardBorderHover: string;
+    iconGradientBg: string;
+    iconTextColor: string;
     sparklinePoints: string;
+    sparklineStroke: string;
     trendLabel: string;
-    trendColor: string;
+    trendBadge: string;
+    glowLight: string;
   };
   index: number;
 }) {
@@ -94,8 +95,8 @@ function TiltKPICard({
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
 
-    const rotX = -((y - centerY) / centerY) * 9;
-    const rotY = ((x - centerX) / centerX) * 9;
+    const rotX = -((y - centerY) / centerY) * 10;
+    const rotY = ((x - centerX) / centerX) * 10;
 
     setRotateX(rotX);
     setRotateY(rotY);
@@ -111,9 +112,9 @@ function TiltKPICard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.96 }}
+      initial={{ opacity: 0, y: 22, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ delay: index * 0.05, duration: 0.4, type: 'spring', stiffness: 200, damping: 20 }}
+      transition={{ delay: index * 0.045, duration: 0.45, type: 'spring', stiffness: 220, damping: 20 }}
       className="perspective-1000"
     >
       <div
@@ -122,56 +123,56 @@ function TiltKPICard({
         onMouseLeave={handleMouseLeave}
         style={{
           transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`,
-          transition: 'transform 0.15s ease-out, box-shadow 0.3s ease',
+          transition: 'transform 0.15s ease-out, box-shadow 0.3s ease, border-color 0.3s ease',
         }}
-        className={`relative overflow-hidden rounded-2xl bg-white/80 backdrop-blur-xl border p-5 shadow-xs hover:shadow-xl transition-all group ${card.borderGlow}`}
+        className={`relative overflow-hidden rounded-2xl bg-white/90 backdrop-blur-2xl border border-white/90 p-5 shadow-xs hover:shadow-2xl transition-all group ${card.cardBorderHover}`}
       >
-        {/* Top Accent Gradient Bar */}
-        <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${card.gradient}`} />
+        {/* Top Accent Gradient Ribbon */}
+        <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${card.gradient}`} />
 
-        {/* Ambient Card Radial Glow on Hover */}
+        {/* Dynamic 3D Radial Glow Halo */}
         <div
-          className={`absolute -right-10 -top-10 w-32 h-32 rounded-full opacity-0 group-hover:opacity-20 blur-2xl transition-opacity pointer-events-none bg-gradient-to-br ${card.gradient}`}
+          className={`absolute -right-8 -top-8 w-36 h-36 rounded-full opacity-0 group-hover:opacity-30 blur-2xl transition-opacity duration-500 pointer-events-none ${card.glowLight}`}
         />
 
-        {/* Card Header: Title & Icon */}
+        {/* Card Header: Title & Colorful Icon */}
         <div className="flex items-start justify-between gap-3 relative z-10">
           <div className="flex flex-col min-w-0">
-            <span className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">
+            <span className="text-[11px] font-extrabold text-slate-500 tracking-wider uppercase">
               {card.title}
             </span>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 tracking-tight truncate font-mono">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-1.5 tracking-tight truncate font-mono">
               {displayValue}
             </div>
           </div>
 
           <div
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${card.iconBg} ${card.iconColor} transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6`}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${card.iconGradientBg} ${card.iconTextColor} transition-all duration-300 group-hover:scale-115 group-hover:rotate-6 ring-2 ring-white/80`}
           >
             <Icon className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Mini Sparkline + Subtitle Footer */}
-        <div className="mt-4 pt-3 border-t border-slate-100/90 flex items-center justify-between gap-2 relative z-10">
+        {/* Sparkline Trendline & Subtitle Footer */}
+        <div className="mt-4 pt-3.5 border-t border-slate-100/90 flex items-center justify-between gap-2 relative z-10">
           <span className="text-xs text-slate-500 font-medium truncate">
             {card.subtitle}
           </span>
 
-          {/* Sparkline Visual */}
-          <div className="flex items-center gap-1 shrink-0">
+          {/* Glowing Mini Sparkline */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <svg className="w-16 h-5 overflow-visible" viewBox="0 0 60 20">
               <path
                 d={card.sparklinePoints}
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className={card.iconColor}
+                className={card.sparklineStroke}
               />
             </svg>
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${card.trendColor}`}>
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ${card.trendBadge}`}>
               {card.trendLabel}
             </span>
           </div>
@@ -187,29 +188,33 @@ export function KPICards({ data }: KPICardsProps) {
       title: 'Total Students',
       numericValue: data.totalStudents,
       isCurrency: false,
-      subtitle: `${data.activeStudents} active enrolled`,
+      subtitle: `${data.activeStudents} actively enrolled`,
       icon: Users,
-      gradient: 'from-blue-600 to-cyan-500',
-      borderGlow: 'border-slate-200/80 hover:border-blue-300 hover:shadow-blue-500/10',
-      iconBg: 'bg-blue-500/10 border border-blue-200/60',
-      iconColor: 'text-blue-600',
-      sparklinePoints: 'M0,15 L15,10 L30,12 L45,5 L60,8',
-      trendLabel: 'Active',
-      trendColor: 'bg-blue-50 text-blue-700',
+      gradient: 'from-blue-600 via-indigo-500 to-cyan-400',
+      cardBorderHover: 'hover:border-blue-400 hover:shadow-blue-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-blue-500 to-cyan-400 shadow-blue-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,15 L15,9 L30,12 L45,4 L60,7',
+      sparklineStroke: 'text-blue-500',
+      trendLabel: 'Enrollment',
+      trendBadge: 'bg-blue-50 text-blue-700 border border-blue-200/80',
+      glowLight: 'bg-blue-500',
     },
     {
       title: 'Active Ratio',
       numericValue: data.totalStudents > 0 ? Math.round((data.activeStudents / data.totalStudents) * 100) : 100,
       isCurrency: false,
-      subtitle: `${data.activeStudents} of ${data.totalStudents} enrolled`,
+      subtitle: `${data.activeStudents} of ${data.totalStudents} active`,
       icon: UserCheck,
-      gradient: 'from-emerald-600 to-teal-400',
-      borderGlow: 'border-slate-200/80 hover:border-emerald-300 hover:shadow-emerald-500/10',
-      iconBg: 'bg-emerald-500/10 border border-emerald-200/60',
-      iconColor: 'text-emerald-600',
-      sparklinePoints: 'M0,18 L15,14 L30,8 L45,6 L60,3',
-      trendLabel: '% Rate',
-      trendColor: 'bg-emerald-50 text-emerald-700',
+      gradient: 'from-emerald-500 via-teal-500 to-green-400',
+      cardBorderHover: 'hover:border-emerald-400 hover:shadow-emerald-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-emerald-500 to-teal-400 shadow-emerald-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,18 L15,13 L30,8 L45,5 L60,2',
+      sparklineStroke: 'text-emerald-500',
+      trendLabel: '% Active',
+      trendBadge: 'bg-emerald-50 text-emerald-700 border border-emerald-200/80',
+      glowLight: 'bg-emerald-500',
     },
     {
       title: "Today's Collection",
@@ -217,13 +222,15 @@ export function KPICards({ data }: KPICardsProps) {
       isCurrency: true,
       subtitle: 'Cash & Digital receipts',
       icon: Coins,
-      gradient: 'from-green-600 to-emerald-400',
-      borderGlow: 'border-slate-200/80 hover:border-green-300 hover:shadow-green-500/10',
-      iconBg: 'bg-green-500/10 border border-green-200/60',
-      iconColor: 'text-green-600',
-      sparklinePoints: 'M0,12 L15,16 L30,10 L45,4 L60,2',
-      trendLabel: 'Today',
-      trendColor: 'bg-green-50 text-green-700',
+      gradient: 'from-green-600 via-emerald-500 to-lime-400',
+      cardBorderHover: 'hover:border-green-400 hover:shadow-green-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-green-500 to-emerald-400 shadow-green-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,14 L15,16 L30,9 L45,4 L60,1',
+      sparklineStroke: 'text-green-500',
+      trendLabel: 'Today Inflow',
+      trendBadge: 'bg-green-50 text-green-700 border border-green-200/80',
+      glowLight: 'bg-green-500',
     },
     {
       title: 'Monthly Collection',
@@ -231,13 +238,15 @@ export function KPICards({ data }: KPICardsProps) {
       isCurrency: true,
       subtitle: 'Current calendar month',
       icon: TrendingUp,
-      gradient: 'from-indigo-600 to-blue-500',
-      borderGlow: 'border-slate-200/80 hover:border-indigo-300 hover:shadow-indigo-500/10',
-      iconBg: 'bg-indigo-500/10 border border-indigo-200/60',
-      iconColor: 'text-indigo-600',
-      sparklinePoints: 'M0,16 L15,12 L30,14 L45,7 L60,3',
-      trendLabel: 'Month',
-      trendColor: 'bg-indigo-50 text-indigo-700',
+      gradient: 'from-indigo-600 via-purple-600 to-pink-500',
+      cardBorderHover: 'hover:border-indigo-400 hover:shadow-indigo-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-indigo-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,16 L15,12 L30,14 L45,6 L60,2',
+      sparklineStroke: 'text-indigo-500',
+      trendLabel: 'Month Trend',
+      trendBadge: 'bg-indigo-50 text-indigo-700 border border-indigo-200/80',
+      glowLight: 'bg-indigo-500',
     },
     {
       title: 'Pending Due Fees',
@@ -245,13 +254,15 @@ export function KPICards({ data }: KPICardsProps) {
       isCurrency: true,
       subtitle: 'Due in current cycle',
       icon: Clock,
-      gradient: 'from-amber-500 to-orange-400',
-      borderGlow: 'border-slate-200/80 hover:border-amber-300 hover:shadow-amber-500/10',
-      iconBg: 'bg-amber-500/10 border border-amber-200/60',
-      iconColor: 'text-amber-600',
-      sparklinePoints: 'M0,8 L15,11 L30,9 L45,15 L60,14',
-      trendLabel: 'Due',
-      trendColor: 'bg-amber-50 text-amber-700',
+      gradient: 'from-amber-500 via-orange-500 to-yellow-400',
+      cardBorderHover: 'hover:border-amber-400 hover:shadow-amber-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-amber-500 to-orange-400 shadow-amber-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,7 L15,11 L30,9 L45,15 L60,13',
+      sparklineStroke: 'text-amber-500',
+      trendLabel: 'Pending Due',
+      trendBadge: 'bg-amber-50 text-amber-700 border border-amber-200/80',
+      glowLight: 'bg-amber-500',
     },
     {
       title: 'Overdue Arrears',
@@ -259,13 +270,15 @@ export function KPICards({ data }: KPICardsProps) {
       isCurrency: true,
       subtitle: 'Past due date balances',
       icon: AlertTriangle,
-      gradient: 'from-rose-600 to-red-400',
-      borderGlow: 'border-slate-200/80 hover:border-rose-300 hover:shadow-rose-500/10',
-      iconBg: 'bg-rose-500/10 border border-rose-200/60',
-      iconColor: 'text-rose-600',
+      gradient: 'from-rose-600 via-red-500 to-pink-600',
+      cardBorderHover: 'hover:border-rose-400 hover:shadow-rose-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-rose-600 to-red-500 shadow-rose-500/30 text-white',
+      iconTextColor: 'text-white',
       sparklinePoints: 'M0,5 L15,8 L30,6 L45,14 L60,18',
-      trendLabel: 'Arrears',
-      trendColor: 'bg-rose-50 text-rose-700',
+      sparklineStroke: 'text-rose-500',
+      trendLabel: 'Arrears Alert',
+      trendBadge: 'bg-rose-50 text-rose-700 border border-rose-200/80',
+      glowLight: 'bg-rose-500',
     },
     {
       title: 'Partial Accounts',
@@ -273,13 +286,15 @@ export function KPICards({ data }: KPICardsProps) {
       isCurrency: false,
       subtitle: 'Paying in installments',
       icon: Receipt,
-      gradient: 'from-violet-600 to-purple-400',
-      borderGlow: 'border-slate-200/80 hover:border-violet-300 hover:shadow-violet-500/10',
-      iconBg: 'bg-violet-500/10 border border-violet-200/60',
-      iconColor: 'text-violet-600',
-      sparklinePoints: 'M0,14 L15,10 L30,13 L45,8 L60,11',
-      trendLabel: 'Installment',
-      trendColor: 'bg-violet-50 text-violet-700',
+      gradient: 'from-purple-600 via-fuchsia-500 to-pink-500',
+      cardBorderHover: 'hover:border-purple-400 hover:shadow-purple-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-purple-600 to-fuchsia-500 shadow-purple-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,14 L15,10 L30,13 L45,7 L60,11',
+      sparklineStroke: 'text-purple-500',
+      trendLabel: 'Installments',
+      trendBadge: 'bg-purple-50 text-purple-700 border border-purple-200/80',
+      glowLight: 'bg-purple-500',
     },
     {
       title: 'New Admissions',
@@ -287,13 +302,15 @@ export function KPICards({ data }: KPICardsProps) {
       isCurrency: false,
       subtitle: 'Admitted this month',
       icon: UserPlus,
-      gradient: 'from-teal-600 to-cyan-400',
-      borderGlow: 'border-slate-200/80 hover:border-teal-300 hover:shadow-teal-500/10',
-      iconBg: 'bg-teal-500/10 border border-teal-200/60',
-      iconColor: 'text-teal-600',
-      sparklinePoints: 'M0,18 L15,12 L30,15 L45,6 L60,2',
-      trendLabel: 'Growth',
-      trendColor: 'bg-teal-50 text-teal-700',
+      gradient: 'from-cyan-500 via-teal-500 to-blue-500',
+      cardBorderHover: 'hover:border-cyan-400 hover:shadow-cyan-500/15',
+      iconGradientBg: 'bg-gradient-to-tr from-cyan-500 to-teal-400 shadow-cyan-500/30 text-white',
+      iconTextColor: 'text-white',
+      sparklinePoints: 'M0,18 L15,12 L30,15 L45,5 L60,2',
+      sparklineStroke: 'text-cyan-500',
+      trendLabel: 'New Intake',
+      trendBadge: 'bg-cyan-50 text-cyan-700 border border-cyan-200/80',
+      glowLight: 'bg-cyan-500',
     },
   ];
 
