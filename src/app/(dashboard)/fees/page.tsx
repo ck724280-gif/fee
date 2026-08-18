@@ -343,7 +343,7 @@ export default function FeesPage() {
                         </Badge>
                         {f.upiSubmissions && f.upiSubmissions.length > 0 && (
                           <Link
-                            href="/upi-approvals"
+                            href="/payments?tab=approvals"
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold hover:bg-amber-200 transition-colors"
                             title={`Student submitted UTR: ${f.upiSubmissions[0].utrNumber}. Click to Approve.`}
                           >

@@ -15,7 +15,6 @@ import {
   Settings,
   LogOut,
   BookOpen,
-  QrCode,
 } from 'lucide-react';
 
 export const navigationItems = [
@@ -24,7 +23,6 @@ export const navigationItems = [
   { name: 'Classes', href: '/classes', icon: GraduationCap },
   { name: 'Fee Records', href: '/fees', icon: CreditCard },
   { name: 'Payments', href: '/payments', icon: Receipt },
-  { name: 'UPI Approvals', href: '/upi-approvals', icon: QrCode },
   { name: 'Expenditure', href: '/expenses', icon: WalletCards },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'Settings', href: '/settings', icon: Settings },

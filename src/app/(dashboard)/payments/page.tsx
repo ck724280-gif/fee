@@ -130,6 +130,15 @@ export default function PaymentsPage() {
   }, [submissionStatusFilter, submissionSearch]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'approvals') {
+        setActiveTab('approvals');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     fetchPayments(1);
     fetchSubmissions();
   }, [fetchPayments, fetchSubmissions]);
