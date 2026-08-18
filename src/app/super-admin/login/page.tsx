@@ -343,20 +343,6 @@ function SuperAdminLoginForm() {
             </div>
           </form>
         )}
-
-        {/* Link back to Institute Login */}
-        <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-          <p className="text-xs text-slate-400">
-            Are you a School, Coaching or Tuition Manager?{' '}
-            <Link
-              href="/login"
-              className="text-cyan-400 hover:text-cyan-300 font-bold inline-flex items-center gap-1 hover:underline ml-1"
-            >
-              <span>Go to Institute Login</span>
-              <ExternalLink className="w-3 h-3" />
-            </Link>
-          </p>
-        </div>
       </div>
     </div>
   );

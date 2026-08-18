@@ -342,8 +342,8 @@ function LoginForm() {
           </form>
         )}
 
-        {/* Footer Registration & Super Admin Links */}
-        <div className="mt-6 pt-5 border-t border-slate-800 space-y-3 text-center">
+        {/* Footer Registration Link */}
+        <div className="mt-6 pt-5 border-t border-slate-800 text-center">
           <p className="text-xs text-slate-400">
             Want to create a new institute?{' '}
             <Link
@@ -353,16 +353,6 @@ function LoginForm() {
               Register Institute
             </Link>
           </p>
-
-          <div className="pt-2 border-t border-slate-800/60">
-            <Link
-              href="/super-admin/login"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30 transition duration-200"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-              <span>Master Super Admin Portal Login →</span>
-            </Link>
-          </div>
         </div>
       </div>
     </div>
