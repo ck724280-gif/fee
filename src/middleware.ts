@@ -18,6 +18,7 @@ const PUBLIC_API_PREFIXES = [
 
 const PUBLIC_PAGE_PREFIXES = [
   '/login',
+  '/super-admin/login',
   '/register',
   '/fees/',
   '/receipts/',
@@ -44,7 +45,7 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(NextResponse.next());
   }
 
-  // 3. Check if route is a public Page route (e.g. /login, /register, /fees/[id])
+  // 3. Check if route is a public Page route (e.g. /login, /register, /super-admin/login, /fees/[id])
   const isPublicPage = PUBLIC_PAGE_PREFIXES.some((prefix) =>
     pathname === prefix || pathname.startsWith(prefix)
   );
@@ -75,10 +76,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 6. Handling for Public Pages (e.g. /login, /register)
+  // 6. Handling for Public Pages (e.g. /login, /register, /super-admin/login)
   if (isPublicPage) {
-    // If already authenticated and visiting /login or /register, redirect
-    if (authPayload && (pathname === '/login' || pathname === '/register')) {
+    // If already authenticated and visiting login or register, redirect
+    if (authPayload && (pathname === '/login' || pathname === '/register' || pathname === '/super-admin/login')) {
       if (authPayload.isSuperAdmin) {
         return NextResponse.redirect(new URL('/super-admin', request.url));
       }
@@ -89,6 +90,10 @@ export async function middleware(request: NextRequest) {
 
   // 7. Super Admin Route Protection
   if (pathname.startsWith('/super-admin') || pathname.startsWith('/api/super-admin')) {
+    if (pathname === '/super-admin/login') {
+      return addSecurityHeaders(NextResponse.next());
+    }
+
     if (!authPayload || !authPayload.isSuperAdmin) {
       if (pathname.startsWith('/api/')) {
         return addSecurityHeaders(
@@ -98,7 +103,7 @@ export async function middleware(request: NextRequest) {
           )
         );
       }
-      return NextResponse.redirect(new URL('/login?redirect=/super-admin', request.url));
+      return NextResponse.redirect(new URL('/super-admin/login', request.url));
     }
   }
 
