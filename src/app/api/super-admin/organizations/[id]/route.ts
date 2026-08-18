@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSuperAdmin, handleApiAuthError } from '@/lib/authorization';
+import { hashPassword } from '@/lib/auth';
 
 export async function GET(
   request: NextRequest,
@@ -56,11 +57,28 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const { name, organizationType, status, plan, pricePerCycle, billingCycle } = body;
+    const {
+      name,
+      organizationType,
+      status,
+      plan,
+      pricePerCycle,
+      billingCycle,
+      ownerName,
+      ownerEmail,
+      ownerMobile,
+      ownerPassword,
+    } = body;
 
     const existingOrg = await prisma.organization.findFirst({
       where: { OR: [{ id }, { publicId: id }] },
-      include: { subscriptions: { orderBy: { createdAt: 'desc' } }, settings: true },
+      include: {
+        subscriptions: { orderBy: { createdAt: 'desc' } },
+        settings: true,
+        members: {
+          include: { user: true },
+        },
+      },
     });
 
     if (!existingOrg) {
@@ -73,20 +91,60 @@ export async function PATCH(
     if (status) updateData.status = status;
 
     const updatedOrg = await prisma.$transaction(async (tx) => {
+      // 1. Update Organization
       const org = await tx.organization.update({
         where: { id: existingOrg.id },
         data: updateData,
       });
 
-      // Update organization settings name if name changed
-      if (name) {
+      // 2. Update Organization Settings
+      const settingsUpdate: any = {};
+      if (name) settingsUpdate.instituteName = String(name).trim();
+      if (ownerMobile !== undefined) settingsUpdate.phone = ownerMobile ? String(ownerMobile).trim() : null;
+      if (ownerEmail) settingsUpdate.email = String(ownerEmail).trim().toLowerCase();
+
+      if (Object.keys(settingsUpdate).length > 0) {
         await tx.organizationSetting.updateMany({
           where: { organizationId: existingOrg.id },
-          data: { instituteName: String(name).trim() },
+          data: settingsUpdate,
         });
       }
 
-      // Update subscription plan/pricing if provided
+      // 3. Update Administrator User Credentials
+      const adminMember =
+        existingOrg.members.find((m) => m.role === 'ORGANIZATION_ADMIN') ||
+        existingOrg.members[0];
+
+      if (adminMember && adminMember.user) {
+        const userUpdate: any = {};
+        if (ownerName) userUpdate.name = String(ownerName).trim();
+        if (ownerMobile !== undefined) userUpdate.mobile = ownerMobile ? String(ownerMobile).trim() : null;
+
+        if (ownerEmail && ownerEmail.trim().toLowerCase() !== adminMember.user.email) {
+          const sanitizedEmail = ownerEmail.trim().toLowerCase();
+          const emailCheck = await tx.user.findUnique({ where: { email: sanitizedEmail } });
+          if (emailCheck && emailCheck.id !== adminMember.user.id) {
+            throw new Error(`Email "${sanitizedEmail}" is already in use by another user account.`);
+          }
+          userUpdate.email = sanitizedEmail;
+        }
+
+        if (ownerPassword && ownerPassword.trim()) {
+          if (ownerPassword.trim().length < 6) {
+            throw new Error('New admin password must be at least 6 characters long.');
+          }
+          userUpdate.passwordHash = await hashPassword(ownerPassword.trim());
+        }
+
+        if (Object.keys(userUpdate).length > 0) {
+          await tx.user.update({
+            where: { id: adminMember.user.id },
+            data: userUpdate,
+          });
+        }
+      }
+
+      // 4. Update Subscription Plan / Pricing
       if (plan || pricePerCycle !== undefined || billingCycle) {
         const sub = existingOrg.subscriptions[0];
         if (sub) {
@@ -105,10 +163,15 @@ export async function PATCH(
         data: {
           userId: admin.userId,
           organizationId: existingOrg.id,
-          action: 'SUPER_ADMIN_UPDATED_ORGANIZATION',
+          action: 'SUPER_ADMIN_UPDATED_ORGANIZATION_ALL_DETAILS',
           entity: 'Organization',
           entityId: existingOrg.id,
-          details: { changes: body },
+          details: {
+            orgName: org.name,
+            updatedEmail: ownerEmail || adminMember?.user?.email,
+            passwordChanged: !!ownerPassword,
+            plan: plan || existingOrg.subscriptions[0]?.plan,
+          },
         },
       });
 
@@ -117,10 +180,10 @@ export async function PATCH(
 
     return NextResponse.json({
       success: true,
-      message: 'Organization updated successfully',
+      message: `Organization "${updatedOrg.name}" and all administrator credentials updated successfully!`,
       organization: updatedOrg,
     });
-  } catch (error) {
+  } catch (error: any) {
     return handleApiAuthError(error);
   }
 }
@@ -142,7 +205,6 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Delete dependent financial and academic data for this organization
       await tx.subscriptionPayment.deleteMany({
         where: { subscription: { organizationId: existingOrg.id } },
       });
