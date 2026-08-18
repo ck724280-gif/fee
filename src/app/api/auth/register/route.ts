@@ -135,7 +135,29 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // 5e. Create Initial Free Starter / Trial Subscription (30 days)
+      // 5e. Create Initial Default Classes (Class 5 - Class 10)
+      const defaultClasses = [
+        { name: 'Class 5', defaultMonthlyFee: 500, defaultAdmissionFee: 200 },
+        { name: 'Class 6', defaultMonthlyFee: 600, defaultAdmissionFee: 250 },
+        { name: 'Class 7', defaultMonthlyFee: 700, defaultAdmissionFee: 300 },
+        { name: 'Class 8', defaultMonthlyFee: 800, defaultAdmissionFee: 350 },
+        { name: 'Class 9', defaultMonthlyFee: 900, defaultAdmissionFee: 400 },
+        { name: 'Class 10', defaultMonthlyFee: 1000, defaultAdmissionFee: 500 },
+      ];
+
+      for (const dc of defaultClasses) {
+        await tx.class.create({
+          data: {
+            organizationId: org.id,
+            name: dc.name,
+            defaultMonthlyFee: dc.defaultMonthlyFee,
+            defaultAdmissionFee: dc.defaultAdmissionFee,
+            status: 'ACTIVE',
+          },
+        });
+      }
+
+      // 5f. Create Initial Free Starter / Trial Subscription (30 days)
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + 30);
 
