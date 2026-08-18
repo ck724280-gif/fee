@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       where.name = { contains: query.search.trim(), mode: 'insensitive' };
     }
 
-    let classes = await prisma.class.findMany({
+    const classes = await prisma.class.findMany({
       where,
       include: {
         _count: {
@@ -33,43 +33,6 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { name: 'asc' },
     });
-
-    // If organization has no classes yet, auto-provision standard default classes
-    if (classes.length === 0 && !query.search) {
-      const defaultClasses = [
-        { name: 'Class 5', defaultMonthlyFee: 500, defaultAdmissionFee: 200 },
-        { name: 'Class 6', defaultMonthlyFee: 600, defaultAdmissionFee: 250 },
-        { name: 'Class 7', defaultMonthlyFee: 700, defaultAdmissionFee: 300 },
-        { name: 'Class 8', defaultMonthlyFee: 800, defaultAdmissionFee: 350 },
-        { name: 'Class 9', defaultMonthlyFee: 900, defaultAdmissionFee: 400 },
-        { name: 'Class 10', defaultMonthlyFee: 1000, defaultAdmissionFee: 500 },
-      ];
-
-      for (const dc of defaultClasses) {
-        await prisma.class.create({
-          data: {
-            organizationId: auth.organizationId,
-            name: dc.name,
-            defaultMonthlyFee: dc.defaultMonthlyFee,
-            defaultAdmissionFee: dc.defaultAdmissionFee,
-            status: 'ACTIVE',
-          },
-        });
-      }
-
-      classes = await prisma.class.findMany({
-        where,
-        include: {
-          _count: {
-            select: {
-              students: { where: { status: 'ACTIVE' } },
-              feeRecords: true,
-            },
-          },
-        },
-        orderBy: { name: 'asc' },
-      });
-    }
 
     const formatted = classes.map((c) => ({
       id: c.id,
