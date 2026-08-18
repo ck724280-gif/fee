@@ -2,56 +2,87 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Check header set by Edge middleware or directly verify cookie
-    let userId = req.headers.get('x-user-id');
-
-    if (!userId) {
-      const session = await getCurrentUser(req);
-      userId = session?.userId || null;
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized', message: 'Authentication required' },
-        { status: 401 }
-      );
+    const session = await getCurrentUser(request);
+    if (!session || !session.userId) {
+      return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+      where: { id: session.userId },
+      include: {
+        memberships: {
+          where: { status: 'ACTIVE' },
+          include: {
+            organization: {
+              include: {
+                settings: true,
+                subscriptions: {
+                  where: { status: 'ACTIVE' },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+        totpSecret: {
+          select: {
+            isEnabled: true,
+            verifiedAt: true,
+          },
+        },
       },
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        user,
+    // Active organization
+    const currentMembership = user.memberships.find(
+      (m) => m.organizationId === session.organizationId
+    ) || user.memberships[0];
+
+    const currentOrg = currentMembership?.organization;
+
+    return NextResponse.json({
+      authenticated: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        mobile: user.mobile,
+        isSuperAdmin: user.isSuperAdmin,
+        role: session.role || currentMembership?.role || 'ORGANIZATION_ADMIN',
+        twoFactorEnabled: !!user.totpSecret?.isEnabled,
       },
-      { status: 200 }
-    );
+      currentOrganization: currentOrg
+        ? {
+            id: currentOrg.id,
+            publicId: currentOrg.publicId,
+            name: currentOrg.name,
+            slug: currentOrg.slug,
+            organizationType: currentOrg.organizationType,
+            status: currentOrg.status,
+            settings: currentOrg.settings,
+            subscription: currentOrg.subscriptions[0] || null,
+          }
+        : null,
+      organizations: user.memberships.map((m) => ({
+        id: m.organization.id,
+        publicId: m.organization.publicId,
+        name: m.organization.name,
+        slug: m.organization.slug,
+        role: m.role,
+        status: m.organization.status,
+      })),
+    });
   } catch (error: any) {
-    console.error('Error in /api/auth/me:', error);
+    console.error('Auth /me error:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to fetch current user session',
-      },
+      { authenticated: false, error: 'Failed to verify session' },
       { status: 500 }
     );
   }

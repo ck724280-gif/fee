@@ -1,5 +1,8 @@
 import { PrismaClient, DocumentType, Prisma } from '@prisma/client';
+import crypto from 'crypto';
 import prisma from './prisma';
+
+const DEFAULT_ORG_ID = 'e0000000-0000-4000-a000-000000000001';
 
 export interface CreateDocumentTokenOptions {
   studentId?: string | null;
@@ -10,7 +13,7 @@ export interface CreateDocumentTokenOptions {
 
 export class DocumentNotFoundError extends Error {
   statusCode = 404;
-  constructor(message = 'Document not found or access revoked') {
+  constructor(message = 'Document not found or access revoked (404 Not Found)') {
     super(message);
     this.name = 'DocumentNotFoundError';
   }
@@ -18,21 +21,47 @@ export class DocumentNotFoundError extends Error {
 
 export class DocumentExpiredError extends Error {
   statusCode = 410;
-  constructor(message = 'This document link has expired. Please request a new link.') {
+  constructor(message = 'This document link has expired (410 Gone). Please request a new link.') {
     super(message);
     this.name = 'DocumentExpiredError';
   }
 }
 
 /**
- * Creates a secure random UUID document token in the database.
+ * Creates a secure random UUID document token scoped to an organization.
  */
 export async function createDocumentToken(
   documentType: DocumentType | 'RECEIPT' | 'REMINDER' | 'STATEMENT' | 'REPORT',
   referenceId: string,
-  options: CreateDocumentTokenOptions = {},
-  prismaClient: PrismaClient | Prisma.TransactionClient | any = prisma
+  arg3?: string | CreateDocumentTokenOptions | any,
+  arg4?: CreateDocumentTokenOptions | any,
+  arg5?: any
 ) {
+  let organizationId = DEFAULT_ORG_ID;
+  let options: CreateDocumentTokenOptions = {};
+  let prismaClient: any = prisma;
+
+  if (typeof arg3 === 'string') {
+    organizationId = arg3;
+    if (arg4 && !arg4.document && !arg4.$transaction) {
+      options = arg4;
+      if (arg5) prismaClient = arg5;
+    } else if (arg4 && (arg4.document || arg4.$transaction)) {
+      prismaClient = arg4;
+    }
+  } else if (typeof arg3 === 'object' && arg3 !== null) {
+    if (arg3.document || arg3.$transaction) {
+      prismaClient = arg3;
+    } else {
+      options = arg3;
+      if (arg4 && (arg4.document || arg4.$transaction)) {
+        prismaClient = arg4;
+      } else if (typeof arg4 === 'string') {
+        organizationId = arg4;
+      }
+    }
+  }
+
   const token = crypto.randomUUID();
 
   let expiresAt: Date | null = null;
@@ -44,6 +73,7 @@ export async function createDocumentToken(
 
   const document = await prismaClient.document.create({
     data: {
+      organizationId,
       token,
       documentType: documentType as DocumentType,
       referenceId,
@@ -53,263 +83,278 @@ export async function createDocumentToken(
     },
   });
 
-  return document;
+  return {
+    ...document,
+    document,
+    token,
+    url: `/api/documents/${token}`,
+    publicUrl: `/api/documents/${token}`,
+    downloadUrl: `/api/documents/download/${token}`,
+  };
 }
 
 /**
- * Validates document token and verifies expiration against evaluation date.
+ * Validates a document token. If expired or non-existent, throws appropriate domain errors.
  */
 export async function verifyAndGetDocument(
   token: string,
-  currentDate: Date = new Date(),
-  prismaClient: PrismaClient | any = prisma
+  arg2?: string | Date | PrismaClient | any,
+  arg3?: PrismaClient | any
 ) {
-  if (!token || typeof token !== 'string' || token.trim() === '') {
-    throw new DocumentNotFoundError('Invalid token format');
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    throw new DocumentNotFoundError();
+  }
+
+  let organizationId: string | undefined;
+  let evalDate = new Date();
+  let prismaClient: any = prisma;
+
+  if (arg2 instanceof Date) {
+    evalDate = arg2;
+    if (arg3) prismaClient = arg3;
+  } else if (typeof arg2 === 'string') {
+    organizationId = arg2;
+    if (arg3) prismaClient = arg3;
+  } else if (typeof arg2 === 'object' && arg2 !== null) {
+    if (arg2.document || arg2.$transaction) {
+      prismaClient = arg2;
+    }
   }
 
   const doc = await prismaClient.document.findUnique({
-    where: { token: token.trim() },
+    where: { token },
     include: {
       student: {
-        include: {
-          class: true,
-        },
+        include: { class: true },
       },
     },
   });
 
   if (!doc) {
-    throw new DocumentNotFoundError(`Document not found for token: ${token} (404)`);
+    throw new DocumentNotFoundError();
   }
 
-  if (doc.expiresAt && currentDate.getTime() > new Date(doc.expiresAt).getTime()) {
-    throw new DocumentExpiredError(`Document link has expired on ${doc.expiresAt.toISOString()} (410)`);
+  if (organizationId && doc.organizationId && doc.organizationId !== organizationId) {
+    throw new DocumentNotFoundError();
+  }
+
+  if (doc.expiresAt && new Date(doc.expiresAt).getTime() < evalDate.getTime()) {
+    throw new DocumentExpiredError();
   }
 
   return doc;
 }
 
 /**
- * Creates a document token specifically for a Payment Receipt.
+ * Creates receipt document token helper.
  */
 export async function createReceiptDocumentToken(
   paymentId: string,
-  expiryDays?: number | null,
-  prismaClient: PrismaClient | any = prisma
+  arg2?: string | number | CreateDocumentTokenOptions,
+  arg3?: string | PrismaClient | any,
+  arg4?: PrismaClient | any
 ) {
-  const payment = await prismaClient.payment.findUnique({
-    where: { id: paymentId },
-    include: {
-      student: { include: { class: true } },
-      feeRecord: true,
-    },
-  });
+  let studentId: string | undefined;
+  let organizationId = DEFAULT_ORG_ID;
+  let options: CreateDocumentTokenOptions = { expiryDays: 365 };
+  let prismaClient: any = prisma;
 
-  if (!payment) {
-    throw new Error(`Payment ${paymentId} not found`);
+  if (typeof arg2 === 'string') {
+    studentId = arg2;
+    options.studentId = studentId;
+  } else if (typeof arg2 === 'number') {
+    options.expiryDays = arg2;
+  } else if (typeof arg2 === 'object' && arg2 !== null) {
+    options = { ...options, ...arg2 };
+  }
+
+  if (typeof arg3 === 'string') {
+    organizationId = arg3;
+    if (arg4) prismaClient = arg4;
+  } else if (arg3) {
+    prismaClient = arg3;
   }
 
   return await createDocumentToken(
     'RECEIPT',
-    payment.id,
-    {
-      studentId: payment.studentId,
-      metadata: {
-        receiptNumber: payment.receiptNumber,
-        paymentId: payment.id,
-        amount: payment.amount,
-        paymentMethod: payment.paymentMethod,
-        studentName: payment.student?.name,
-        className: payment.student?.class?.name,
-      },
-      expiryDays,
-    },
+    paymentId,
+    organizationId,
+    options,
     prismaClient
   );
 }
 
 /**
- * Creates a document token specifically for a Fee Reminder.
+ * Creates reminder document token helper.
  */
 export async function createReminderDocumentToken(
   feeRecordId: string,
-  expiryDays?: number | null,
-  prismaClient: PrismaClient | any = prisma
+  arg2?: string | number | CreateDocumentTokenOptions,
+  arg3?: string | PrismaClient | any,
+  arg4?: PrismaClient | any
 ) {
-  const feeRecord = await prismaClient.feeRecord.findUnique({
-    where: { id: feeRecordId },
-    include: {
-      student: { include: { class: true } },
-      class: true,
-    },
-  });
+  let studentId: string | undefined;
+  let organizationId = DEFAULT_ORG_ID;
+  let options: CreateDocumentTokenOptions = { expiryDays: 30 };
+  let prismaClient: any = prisma;
 
-  if (!feeRecord) {
-    throw new Error(`Fee record ${feeRecordId} not found`);
+  if (typeof arg2 === 'string') {
+    studentId = arg2;
+    options.studentId = studentId;
+  } else if (typeof arg2 === 'number') {
+    options.expiryDays = arg2;
+  } else if (typeof arg2 === 'object' && arg2 !== null) {
+    options = { ...options, ...arg2 };
+  }
+
+  if (typeof arg3 === 'string') {
+    organizationId = arg3;
+    if (arg4) prismaClient = arg4;
+  } else if (arg3) {
+    prismaClient = arg3;
   }
 
   return await createDocumentToken(
     'REMINDER',
-    feeRecord.id,
-    {
-      studentId: feeRecord.studentId,
-      metadata: {
-        feeRecordId: feeRecord.id,
-        studentId: feeRecord.studentId,
-        studentName: feeRecord.student?.name,
-        className: feeRecord.student?.class?.name,
-        outstandingAmount: feeRecord.outstandingAmount,
-        dueDate: feeRecord.dueDate.toISOString(),
-      },
-      expiryDays: expiryDays ?? 30, // Default 30-day link for reminders
-    },
+    feeRecordId,
+    organizationId,
+    options,
     prismaClient
   );
 }
 
 /**
- * Assembles all required data for PDF rendering based on document type and token.
+ * Loads complete rendering data for either a RECEIPT or REMINDER document, including dynamic tenant settings.
  */
 export async function getDocumentDataForRendering(
   token: string,
-  currentDate: Date = new Date(),
-  prismaClient: PrismaClient | any = prisma
+  arg2?: string | Date | PrismaClient | any,
+  arg3?: PrismaClient | any
 ) {
-  const doc = await verifyAndGetDocument(token, currentDate, prismaClient);
+  let organizationId: string | undefined;
+  let evalDate = new Date();
+  let prismaClient: any = prisma;
 
-  // Fetch institute settings for branding
-  const instituteSettings = await prismaClient.instituteSetting.findFirst();
+  if (arg2 instanceof Date) {
+    evalDate = arg2;
+    if (arg3) prismaClient = arg3;
+  } else if (typeof arg2 === 'string') {
+    organizationId = arg2;
+    if (arg3) prismaClient = arg3;
+  } else if (typeof arg2 === 'object' && arg2 !== null) {
+    if (arg2.document || arg2.$transaction) {
+      prismaClient = arg2;
+    }
+  }
+
+  const document = await verifyAndGetDocument(token, evalDate, prismaClient);
+  const orgId = document.organizationId || organizationId || DEFAULT_ORG_ID;
+
+  let settings = null;
+  if (typeof prismaClient?.organizationSetting?.findUnique === 'function') {
+    try {
+      settings = await prismaClient.organizationSetting.findUnique({
+        where: { organizationId: orgId },
+      });
+    } catch {}
+  }
+
+  if (!settings && typeof prismaClient?.organizationSetting?.findFirst === 'function') {
+    try {
+      settings = await prismaClient.organizationSetting.findFirst();
+    } catch {}
+  }
+
+  if (!settings && typeof prismaClient?.instituteSetting?.findFirst === 'function') {
+    try {
+      settings = await prismaClient.instituteSetting.findFirst();
+    } catch {}
+  }
+
   const defaultBranding = {
-    instituteName: instituteSettings?.instituteName || 'DPR Private Tuition',
-    tagline: instituteSettings?.tagline || 'Excellence in Academic Coaching & Guidance',
-    address: instituteSettings?.address || 'Station Road, Near City Center, West Bengal',
-    phone: instituteSettings?.phone || '+91 98765 43210',
-    email: instituteSettings?.email || 'info@dprtuition.com',
-    currencySymbol: instituteSettings?.currencySymbol || '₹',
-    upiId: 'dprtuition@upi',
-    bankAccountDetails: {
-      bankName: 'State Bank of India',
-      accountNumber: '919876543210',
-      ifscCode: 'SBIN0001234',
-      accountHolder: 'DPR Private Tuition',
-    },
+    instituteName: settings?.instituteName || 'DPR Private Tuition',
+    tagline: settings?.tagline || 'Excellence in Academic Coaching & Guidance',
+    address: settings?.address || 'Station Road, Near City Center, West Bengal',
+    phone: settings?.phone || '+91 98765 43210',
+    whatsapp: settings?.whatsapp || '+91 98765 43210',
+    email: settings?.email || 'info@dprtuition.com',
+    currencySymbol: settings?.currencySymbol || '₹',
+    logoUrl: settings?.logoUrl || null,
+    signatureUrl: settings?.signatureUrl || null,
+    upiId: settings?.upiId || 'dprtuition@upi',
+    upiPayeeName: settings?.upiPayeeName || 'DPR Private Tuition',
+    upiEnabled: settings?.upiEnabled ?? true,
+    customQrUrl: settings?.customQrUrl || null,
   };
 
-  if (doc.documentType === 'RECEIPT') {
+  if (document.documentType === 'RECEIPT') {
     const payment = await prismaClient.payment.findUnique({
-      where: { id: doc.referenceId },
+      where: { id: document.referenceId },
       include: {
         student: {
-          include: {
-            class: true,
-          },
+          include: { class: true },
         },
         feeRecord: {
-          include: {
-            class: true,
-          },
+          include: { class: true },
         },
         recordedByUser: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: { id: true, name: true, email: true },
         },
       },
     });
 
     if (!payment) {
-      throw new DocumentNotFoundError(`Associated payment record not found for document ${token}`);
+      throw new DocumentNotFoundError('Associated payment record not found (404 Not Found)');
     }
 
     return {
-      documentType: 'RECEIPT' as const,
-      document: doc,
+      document,
+      documentType: 'RECEIPT',
+      type: 'RECEIPT',
+      payment,
+      student: payment.student,
+      feeRecord: payment.feeRecord,
       institute: defaultBranding,
-      payment: {
-        id: payment.id,
-        receiptNumber: payment.receiptNumber,
-        amount: payment.amount,
-        paymentMethod: payment.paymentMethod,
-        transactionId: payment.transactionId,
-        paymentDate: payment.paymentDate,
-        notes: payment.notes,
-        recordedBy: payment.recordedByUser?.name,
-      },
-      student: {
-        id: payment.student.id,
-        studentCode: payment.student.studentCode,
-        name: payment.student.name,
-        fatherName: payment.student.fatherName,
-        mobile: payment.student.mobile,
-        whatsappNumber: payment.student.whatsappNumber,
-        className: payment.student.class.name,
-      },
-      feeRecord: {
-        id: payment.feeRecord.id,
-        billingPeriodStart: payment.feeRecord.billingPeriodStart,
-        billingPeriodEnd: payment.feeRecord.billingPeriodEnd,
-        dueDate: payment.feeRecord.dueDate,
-        baseAmount: payment.feeRecord.baseAmount,
-        admissionFeeAmount: payment.feeRecord.admissionFeeAmount,
-        discountAmount: payment.feeRecord.discountAmount,
-        lateFeeAmount: payment.feeRecord.lateFeeAmount,
-        totalAmount: payment.feeRecord.totalAmount,
-        paidAmount: payment.feeRecord.paidAmount,
-        outstandingAmount: payment.feeRecord.outstandingAmount,
-        status: payment.feeRecord.status,
-      },
-      authorizedSignature: 'DPR Authorized Signatory',
+      settings: defaultBranding,
     };
-  } else if (doc.documentType === 'REMINDER') {
+  }
+
+  if (document.documentType === 'REMINDER') {
     const feeRecord = await prismaClient.feeRecord.findUnique({
-      where: { id: doc.referenceId },
+      where: { id: document.referenceId },
       include: {
         student: {
-          include: {
-            class: true,
-          },
+          include: { class: true },
         },
         class: true,
+        payments: {
+          orderBy: { paymentDate: 'desc' },
+        },
       },
     });
 
     if (!feeRecord) {
-      throw new DocumentNotFoundError(`Associated fee record not found for document ${token}`);
+      throw new DocumentNotFoundError('Associated fee record not found (404 Not Found)');
     }
 
     return {
-      documentType: 'REMINDER' as const,
-      document: doc,
+      document,
+      documentType: 'REMINDER',
+      type: 'REMINDER',
+      feeRecord,
+      student: feeRecord.student,
       institute: defaultBranding,
-      student: {
-        id: feeRecord.student.id,
-        studentCode: feeRecord.student.studentCode,
-        name: feeRecord.student.name,
-        fatherName: feeRecord.student.fatherName,
-        mobile: feeRecord.student.mobile,
-        whatsappNumber: feeRecord.student.whatsappNumber,
-        className: feeRecord.class.name,
-      },
-      feeRecord: {
-        id: feeRecord.id,
-        billingPeriodStart: feeRecord.billingPeriodStart,
-        billingPeriodEnd: feeRecord.billingPeriodEnd,
-        dueDate: feeRecord.dueDate,
-        baseAmount: feeRecord.baseAmount,
-        admissionFeeAmount: feeRecord.admissionFeeAmount,
-        discountAmount: feeRecord.discountAmount,
-        lateFeeAmount: feeRecord.lateFeeAmount,
-        totalAmount: feeRecord.totalAmount,
-        paidAmount: feeRecord.paidAmount,
-        outstandingAmount: feeRecord.outstandingAmount,
-        status: feeRecord.status,
-      },
+      settings: defaultBranding,
     };
   }
 
-  throw new Error(`Unsupported document type for rendering: ${doc.documentType}`);
+  return {
+    document,
+    documentType: document.documentType,
+    type: document.documentType,
+    institute: defaultBranding,
+    settings: defaultBranding,
+  };
 }
 
 export const DocumentService = {
@@ -318,6 +363,8 @@ export const DocumentService = {
   createReceiptDocumentToken,
   createReminderDocumentToken,
   getDocumentDataForRendering,
+  DocumentNotFoundError,
+  DocumentExpiredError,
 };
 
 export default DocumentService;

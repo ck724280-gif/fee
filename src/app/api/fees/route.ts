@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { feeFilterSchema } from '@/lib/validations/fee';
 import { Prisma } from '@prisma/client';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(request);
+
     const { searchParams } = new URL(request.url);
     const queryParams: Record<string, string> = {};
     searchParams.forEach((value, key) => {
@@ -30,13 +33,15 @@ export async function GET(request: NextRequest) {
       startDate,
       endDate,
       search,
-      page,
-      limit,
-      sortBy,
-      sortOrder,
+      page = 1,
+      limit = 20,
+      sortBy = 'dueDate',
+      sortOrder = 'desc',
     } = parsed.data;
 
-    const where: Prisma.FeeRecordWhereInput = {};
+    const where: Prisma.FeeRecordWhereInput = {
+      organizationId: auth.organizationId,
+    };
 
     if (classId) {
       where.classId = classId;
@@ -81,6 +86,7 @@ export async function GET(request: NextRequest) {
           student: {
             select: {
               id: true,
+              publicId: true,
               studentCode: true,
               name: true,
               mobile: true,
@@ -99,27 +105,20 @@ export async function GET(request: NextRequest) {
           payments: {
             select: {
               id: true,
+              publicId: true,
               receiptNumber: true,
               amount: true,
-              paymentMethod: true,
               paymentDate: true,
+              paymentMethod: true,
             },
             orderBy: { paymentDate: 'desc' },
           },
-          upiSubmissions: {
-            where: { status: 'PENDING' },
-            select: {
-              id: true,
-              utrNumber: true,
-              submittedAt: true,
-            },
-          },
-        },
-        orderBy: {
-          [sortBy]: sortOrder,
         },
         skip,
         take: limit,
+        orderBy: {
+          [sortBy]: sortOrder,
+        },
       }),
       prisma.feeRecord.aggregate({
         where,
@@ -128,45 +127,27 @@ export async function GET(request: NextRequest) {
           paidAmount: true,
           outstandingAmount: true,
           lateFeeAmount: true,
-          discountAmount: true,
         },
       }),
     ]);
 
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          feeRecords,
-          pagination: {
-            total,
-            page,
-            limit,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-          },
-          summary: {
-            totalBilled: aggregations._sum.totalAmount || 0,
-            totalPaid: aggregations._sum.paidAmount || 0,
-            totalOutstanding: aggregations._sum.outstandingAmount || 0,
-            totalLateFees: aggregations._sum.lateFeeAmount || 0,
-            totalDiscounts: aggregations._sum.discountAmount || 0,
-          },
-        },
+    return NextResponse.json({
+      success: true,
+      data: feeRecords,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error('Error fetching fee records:', err);
-    return NextResponse.json(
-      {
-        success: false,
-        error: err.message || 'Failed to fetch fee records',
+      summary: {
+        totalBilled: aggregations._sum.totalAmount || 0,
+        totalPaid: aggregations._sum.paidAmount || 0,
+        totalOutstanding: aggregations._sum.outstandingAmount || 0,
+        totalLateFees: aggregations._sum.lateFeeAmount || 0,
       },
-      { status: 500 }
-    );
+    });
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth';
 import { updateExpenseSchema } from '@/lib/validations/expense';
 import { updateExpense, deleteExpense } from '@/lib/expense-service';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(req);
     const { id } = await params;
-    const expense = await prisma.expense.findUnique({
-      where: { id },
+
+    const expense = await prisma.expense.findFirst({
+      where: { id, organizationId: auth.organizationId },
       include: {
         recordedByUser: {
           select: { id: true, name: true, email: true },
@@ -21,7 +23,7 @@ export async function GET(
 
     if (!expense) {
       return NextResponse.json(
-        { success: false, error: 'Expense record not found' },
+        { success: false, error: 'Expense record not found in your organization' },
         { status: 404 }
       );
     }
@@ -30,11 +32,8 @@ export async function GET(
       success: true,
       data: expense,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch expense' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
@@ -43,9 +42,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(req);
     const { id } = await params;
-    const session = await getCurrentUser(req);
-    const userId = req.headers.get('x-user-id') || session?.userId;
 
     const body = await req.json();
     const parsed = updateExpenseSchema.safeParse(body);
@@ -59,18 +57,15 @@ export async function PUT(
       );
     }
 
-    const updated = await updateExpense(id, parsed.data, userId);
+    const updated = await updateExpense(id, parsed.data, auth.organizationId, auth.userId);
 
     return NextResponse.json({
       success: true,
       message: 'Expense updated successfully',
       data: updated,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to update expense' },
-      { status: 400 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
@@ -79,20 +74,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(req);
     const { id } = await params;
-    const session = await getCurrentUser(req);
-    const userId = req.headers.get('x-user-id') || session?.userId;
 
-    await deleteExpense(id, userId);
+    await deleteExpense(id, auth.organizationId, auth.userId);
 
     return NextResponse.json({
       success: true,
       message: 'Expense deleted successfully',
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete expense' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

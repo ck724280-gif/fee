@@ -3,6 +3,7 @@ import prisma from './prisma';
 
 export interface CreateAuditLogInput {
   userId?: string | null;
+  organizationId?: string | null;
   action: string;
   entity: string;
   entityId?: string | null;
@@ -12,6 +13,7 @@ export interface CreateAuditLogInput {
 }
 
 export interface AuditLogFilterOptions {
+  organizationId?: string;
   action?: string;
   entity?: string;
   entityId?: string;
@@ -25,7 +27,6 @@ export interface AuditLogFilterOptions {
 
 /**
  * Creates an immutable audit trail entry in the database.
- * Designed to be non-blocking for critical business paths (catches internal DB errors unless within a transaction).
  */
 export async function createAuditLog(input: CreateAuditLogInput) {
   const client = input.prismaClient || prisma;
@@ -34,6 +35,7 @@ export async function createAuditLog(input: CreateAuditLogInput) {
     const record = await client.auditLog.create({
       data: {
         userId: input.userId || null,
+        organizationId: input.organizationId || null,
         action: input.action,
         entity: input.entity,
         entityId: input.entityId || null,
@@ -44,7 +46,6 @@ export async function createAuditLog(input: CreateAuditLogInput) {
     return record;
   } catch (error) {
     console.error('Failed to create audit log entry:', error);
-    // If running within an explicit transaction client, bubble up so the transaction handles it
     if (input.prismaClient) {
       throw error;
     }
@@ -53,13 +54,14 @@ export async function createAuditLog(input: CreateAuditLogInput) {
 }
 
 /**
- * Queries audit logs with filtering, search, and pagination.
+ * Queries audit logs with filtering, search, and tenant isolation.
  */
 export async function listAuditLogs(
   options: AuditLogFilterOptions = {},
   prismaClient: PrismaClient | any = prisma
 ) {
   const {
+    organizationId,
     action,
     entity,
     entityId,
@@ -72,6 +74,10 @@ export async function listAuditLogs(
   } = options;
 
   const where: any = {};
+
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
 
   if (action) {
     where.action = action;
@@ -101,12 +107,12 @@ export async function listAuditLogs(
     }
   }
 
-  if (search && search.trim()) {
-    const term = search.trim();
+  if (search) {
+    const searchTrim = search.trim();
     where.OR = [
-      { action: { contains: term, mode: 'insensitive' } },
-      { entity: { contains: term, mode: 'insensitive' } },
-      { entityId: { contains: term, mode: 'insensitive' } },
+      { action: { contains: searchTrim, mode: 'insensitive' } },
+      { entity: { contains: searchTrim, mode: 'insensitive' } },
+      { entityId: { contains: searchTrim, mode: 'insensitive' } },
     ];
   }
 
@@ -116,30 +122,37 @@ export async function listAuditLogs(
     prismaClient.auditLog.count({ where }),
     prismaClient.auditLog.findMany({
       where,
+      skip,
+      take: limit,
+      orderBy: { timestamp: 'desc' },
       include: {
         user: {
           select: {
             id: true,
-            email: true,
             name: true,
-            role: true,
+            email: true,
           },
         },
       },
-      orderBy: { timestamp: 'desc' },
-      skip,
-      take: limit,
     }),
   ]);
 
   return {
     logs,
+    data: logs,
     pagination: {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit) || 1,
+      totalPages: Math.ceil(total / limit),
       hasMore: skip + logs.length < total,
     },
   };
 }
+
+export const AuditService = {
+  createAuditLog,
+  listAuditLogs,
+};
+
+export default AuditService;

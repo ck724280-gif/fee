@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { deriveFeeStatus, startOfDay } from '@/lib/billing-engine';
 import { FeeStatus } from '@prisma/client';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     let currentDateInput: string | undefined = undefined;
     try {
       const body = await req.json();
@@ -17,6 +20,7 @@ export async function POST(req: NextRequest) {
 
     const feeRecords = await prisma.feeRecord.findMany({
       where: {
+        organizationId: auth.organizationId,
         status: { in: [FeeStatus.UPCOMING, FeeStatus.DUE] },
         outstandingAmount: { gt: 0 },
       },
@@ -49,6 +53,8 @@ export async function POST(req: NextRequest) {
 
     await prisma.auditLog.create({
       data: {
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'FEE_STATUSES_REFRESHED',
         entity: 'FEE_RECORD',
         details: {
@@ -67,10 +73,7 @@ export async function POST(req: NextRequest) {
         updated: updatedCount,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to refresh fee statuses' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

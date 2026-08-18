@@ -1,33 +1,40 @@
 import prisma from '../src/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { OrganizationType, MemberRole } from '@prisma/client';
 
-async function main() {
+const DEFAULT_ORG_ID = 'e0000000-0000-4000-a000-000000000001';
+
+async function cleanForProduction() {
   console.log('========================================================');
-  console.log('🚀 CLEANING DATABASE FOR FRESH PRODUCTION DEPLOYMENT');
+  console.log('🧹 CLEANING & PREPARING DATABASE FOR LIVE PRODUCTION');
   console.log('========================================================\n');
 
-  // 1. Delete all transactional, student, and operational records
-  console.log('1. Clearing operational data...');
-  const docs = await prisma.document.deleteMany({});
-  console.log(`   ✓ Deleted ${docs.count} documents`);
-
-  const payments = await prisma.payment.deleteMany({});
-  console.log(`   ✓ Deleted ${payments.count} payments`);
-
-  const fees = await prisma.feeRecord.deleteMany({});
-  console.log(`   ✓ Deleted ${fees.count} fee records`);
-
-  const students = await prisma.student.deleteMany({});
-  console.log(`   ✓ Deleted ${students.count} students`);
-
-  const expenses = await prisma.expense.deleteMany({});
-  console.log(`   ✓ Deleted ${expenses.count} expenses`);
+  // 1. Wipe all operational and financial records safely
+  console.log('1. Purging all test students, classes, payments, and fees...');
 
   const auditLogs = await prisma.auditLog.deleteMany({});
   console.log(`   ✓ Deleted ${auditLogs.count} audit logs`);
 
+  const documents = await prisma.document.deleteMany({});
+  console.log(`   ✓ Deleted ${documents.count} document tokens`);
+
+  const upiSubmissions = await prisma.upiSubmission.deleteMany({});
+  console.log(`   ✓ Deleted ${upiSubmissions.count} UPI submissions`);
+
+  const payments = await prisma.payment.deleteMany({});
+  console.log(`   ✓ Deleted ${payments.count} payments`);
+
+  const feeRecords = await prisma.feeRecord.deleteMany({});
+  console.log(`   ✓ Deleted ${feeRecords.count} fee records`);
+
+  const students = await prisma.student.deleteMany({});
+  console.log(`   ✓ Deleted ${students.count} students`);
+
   const classes = await prisma.class.deleteMany({});
   console.log(`   ✓ Deleted ${classes.count} classes`);
+
+  const expenses = await prisma.expense.deleteMany({});
+  console.log(`   ✓ Deleted ${expenses.count} expenses`);
 
   // 2. Ensure Superadmin User is active and ready
   console.log('\n2. Verifying Superadmin Account...');
@@ -43,9 +50,9 @@ async function main() {
     adminUser = await prisma.user.update({
       where: { email: adminEmail },
       data: {
-        name: 'DPR Admin',
+        name: 'DPR Master Admin',
         passwordHash,
-        role: 'ADMIN',
+        isSuperAdmin: true,
       },
     });
     console.log(`   ✓ Superadmin credentials verified: ${adminUser.email}`);
@@ -54,28 +61,55 @@ async function main() {
       data: {
         email: adminEmail,
         passwordHash,
-        name: 'DPR Admin',
-        role: 'ADMIN',
+        name: 'DPR Master Admin',
+        isSuperAdmin: true,
       },
     });
     console.log(`   ✓ Superadmin created: ${adminUser.email}`);
   }
 
-  // Delete any other non-admin dummy users if any exist
-  const otherUsers = await prisma.user.deleteMany({
-    where: {
-      id: { not: adminUser.id },
+  // 3. Ensure Default Organization exists
+  const org = await prisma.organization.upsert({
+    where: { id: DEFAULT_ORG_ID },
+    create: {
+      id: DEFAULT_ORG_ID,
+      name: 'DPR Private Tuition',
+      slug: 'dpr-tuition',
+      organizationType: OrganizationType.PRIVATE_TUITION,
+      status: 'ACTIVE',
+    },
+    update: {
+      name: 'DPR Private Tuition',
+      slug: 'dpr-tuition',
+      status: 'ACTIVE',
     },
   });
-  if (otherUsers.count > 0) {
-    console.log(`   ✓ Removed ${otherUsers.count} extra user accounts`);
-  }
 
-  // 3. Reset Institute Settings to default brand new state
-  console.log('\n3. Initializing Institute Settings...');
-  await prisma.instituteSetting.deleteMany({});
-  const settings = await prisma.instituteSetting.create({
-    data: {
+  await prisma.organizationMember.upsert({
+    where: {
+      userId_organizationId: {
+        organizationId: org.id,
+        userId: adminUser.id,
+      },
+    },
+    create: {
+      organizationId: org.id,
+      userId: adminUser.id,
+      role: MemberRole.ORGANIZATION_ADMIN,
+      status: 'ACTIVE',
+    },
+    update: {
+      role: MemberRole.ORGANIZATION_ADMIN,
+      status: 'ACTIVE',
+    },
+  });
+
+  // 4. Reset Organization Settings to default clean state
+  console.log('\n3. Initializing Organization Settings...');
+  const settings = await prisma.organizationSetting.upsert({
+    where: { organizationId: org.id },
+    create: {
+      organizationId: org.id,
       instituteName: 'DPR Private Tuition',
       tagline: 'Excellence in Academic Coaching & Guidance',
       address: 'Station Road, Near City Center, West Bengal',
@@ -83,13 +117,23 @@ async function main() {
       whatsapp: '+91 98765 43210',
       email: 'info@dprtuition.com',
       receiptPrefix: 'DPR-RC',
+      feePrefix: 'DPR-FEE',
       currencySymbol: '₹',
       defaultGraceDays: 0,
+      upiId: 'dprtuition@upi',
+      upiPayeeName: 'DPR Private Tuition',
+      upiEnabled: true,
+    },
+    update: {
+      instituteName: 'DPR Private Tuition',
+      tagline: 'Excellence in Academic Coaching & Guidance',
+      receiptPrefix: 'DPR-RC',
+      feePrefix: 'DPR-FEE',
     },
   });
   console.log(`   ✓ Default settings initialized for: "${settings.instituteName}"`);
 
-  // 4. Verification Summary
+  // 5. Verification Summary
   console.log('\n========================================================');
   console.log('✅ DATABASE RESET COMPLETE — 100% CLEAN FOR PRODUCTION');
   console.log('========================================================');
@@ -103,9 +147,9 @@ async function main() {
   console.log('========================================================\n');
 }
 
-main()
+cleanForProduction()
   .catch((e) => {
-    console.error('Error resetting database:', e);
+    console.error('Failed to clean database:', e);
     process.exit(1);
   })
   .finally(async () => {

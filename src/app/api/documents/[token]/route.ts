@@ -36,7 +36,7 @@ export async function GET(
         return NextResponse.json(
           {
             success: false,
-            error: 'This document link has expired. Please request an updated link from DPR Private Tuition.',
+            error: 'This document link has expired. Please request an updated link from your educational institute.',
           },
           { status: 410 }
         );
@@ -45,14 +45,15 @@ export async function GET(
     }
 
     let pdfElement: React.ReactElement;
-    let filename = `DPR-Document-${token.substring(0, 8)}.pdf`;
+    const cleanOrgName = (renderData.institute?.instituteName || 'Document').replace(/[^a-zA-Z0-9]/g, '-');
+    let filename = `${cleanOrgName}-${token.substring(0, 8)}.pdf`;
 
     if (renderData.documentType === 'RECEIPT') {
       pdfElement = React.createElement(ReceiptPDF, { data: renderData });
-      filename = `DPR-Receipt-${renderData.payment.receiptNumber || token.substring(0, 8)}.pdf`;
+      filename = `${cleanOrgName}-Receipt-${renderData.payment.receiptNumber || token.substring(0, 8)}.pdf`;
     } else if (renderData.documentType === 'REMINDER') {
       pdfElement = React.createElement(ReminderPDF, { data: renderData });
-      filename = `DPR-Fee-Reminder-${renderData.student.studentCode || token.substring(0, 8)}.pdf`;
+      filename = `${cleanOrgName}-Reminder-${renderData.student.studentCode || token.substring(0, 8)}.pdf`;
     } else {
       return NextResponse.json(
         { success: false, error: `Unsupported document rendering type: ${renderData.documentType}` },
@@ -60,9 +61,8 @@ export async function GET(
       );
     }
 
-    // Render PDF in-memory buffer without touching disk storage
+    // Render PDF in-memory buffer
     const pdfBuffer = await renderToBuffer(pdfElement as any);
-
     const dispositionType = isDownload ? 'attachment' : 'inline';
 
     return new Response(pdfBuffer as any, {

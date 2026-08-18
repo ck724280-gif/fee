@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import prisma from '@/lib/prisma';
 import { createStudentSchema, studentQuerySchema } from '@/lib/validations/student';
 import { generateStudentCode, generateStudentBillingRecords, formatYMD } from '@/lib/billing-engine';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     const url = new URL(req.url);
     const searchParams = Object.fromEntries(url.searchParams.entries());
     const query = studentQuerySchema.parse(searchParams);
 
-    const where: any = {};
+    const where: any = {
+      organizationId: auth.organizationId,
+    };
 
     if (query.classId) {
       where.classId = query.classId;
@@ -92,6 +98,7 @@ export async function GET(req: NextRequest) {
 
       return {
         id: s.id,
+        publicId: s.publicId,
         studentCode: s.studentCode,
         name: s.name,
         fatherName: s.fatherName,
@@ -100,153 +107,157 @@ export async function GET(req: NextRequest) {
         mobile: s.mobile,
         whatsappNumber: s.whatsappNumber,
         address: s.address,
-        dob: s.dob,
+        dob: s.dob ? formatYMD(s.dob) : null,
         gender: s.gender,
         school: s.school,
         classId: s.classId,
         className: s.class.name,
-        classDefaultFee,
+        admissionDate: formatYMD(s.admissionDate),
+        joiningDate: s.joiningDate ? formatYMD(s.joiningDate) : null,
         feeMode: s.feeMode,
-        customMonthlyFee: s.customMonthlyFee,
+        classDefaultFee,
         actualMonthlyFee,
+        customMonthlyFee: s.customMonthlyFee,
         admissionFee: s.admissionFee,
         discountType: s.discountType,
         discountValue: s.discountValue,
-        admissionDate: s.admissionDate,
-        joiningDate: s.joiningDate,
         status: s.status,
         totalBilled,
         totalPaid,
         totalOutstanding,
-        latestFeeStatus: latestFeeRecord?.status || 'UPCOMING',
+        currentFeeStatus: latestFeeRecord ? latestFeeRecord.status : 'UPCOMING',
         createdAt: s.createdAt,
       };
     });
 
-    let totalOutstandingSum = 0;
-    let activeStudentsCount = 0;
+    let activeCount = 0;
+    let inactiveCount = 0;
+    let totalOutstandingAll = 0;
+
     allMatchingForSummary.forEach((s) => {
-      if (s.status === 'ACTIVE') activeStudentsCount++;
+      if (s.status === 'ACTIVE') activeCount++;
+      if (s.status === 'INACTIVE') inactiveCount++;
       s.feeRecords.forEach((f) => {
-        totalOutstandingSum += f.outstandingAmount;
+        totalOutstandingAll += f.outstandingAmount;
       });
     });
 
-    const totalPages = Math.ceil(total / query.limit) || 1;
-
     return NextResponse.json({
-      success: true,
-      data: {
-        students: formattedStudents,
-        pagination: {
-          total,
-          page: query.page,
-          limit: query.limit,
-          totalPages,
-          hasNextPage: query.page < totalPages,
-          hasPrevPage: query.page > 1,
-        },
-        summary: {
-          totalStudents: total,
-          activeStudents: activeStudentsCount,
-          totalOutstanding: totalOutstandingSum,
-        },
+      data: formattedStudents,
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+      summary: {
+        totalStudents: total,
+        activeStudents: activeCount,
+        inactiveStudents: inactiveCount,
+        totalOutstanding: totalOutstandingAll,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch students' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     const body = await req.json();
     const validatedData = createStudentSchema.parse(body);
 
-    const cls = await prisma.class.findUnique({
-      where: { id: validatedData.classId },
+    // Verify class belongs to this organization (prevents IDOR)
+    const targetClass = await prisma.class.findFirst({
+      where: {
+        id: validatedData.classId,
+        organizationId: auth.organizationId,
+      },
     });
 
-    if (!cls) {
+    if (!targetClass) {
       return NextResponse.json(
-        { success: false, error: 'Selected class does not exist' },
-        { status: 404 }
+        { error: 'Selected Class does not exist in your organization.' },
+        { status: 400 }
       );
     }
 
     const admissionDate = new Date(validatedData.admissionDate);
-    const admissionYear = admissionDate.getFullYear() || new Date().getFullYear();
+    const joiningDate = validatedData.joiningDate ? new Date(validatedData.joiningDate) : null;
+    const dob = validatedData.dob ? new Date(validatedData.dob) : null;
 
-    const studentCode = await generateStudentCode(prisma, admissionYear);
+    const studentCode = await generateStudentCode(
+      prisma,
+      auth.organizationId,
+      admissionDate.getFullYear()
+    );
 
-    const student = await prisma.student.create({
-      data: {
-        studentCode,
-        name: validatedData.name,
-        fatherName: validatedData.fatherName,
-        motherName: validatedData.motherName || null,
-        guardianName: validatedData.guardianName || null,
-        mobile: validatedData.mobile,
-        whatsappNumber: validatedData.whatsappNumber || null,
-        address: validatedData.address || null,
-        dob: validatedData.dob ? new Date(validatedData.dob) : null,
-        gender: validatedData.gender,
-        school: validatedData.school || null,
-        classId: validatedData.classId,
-        admissionDate,
-        joiningDate: validatedData.joiningDate ? new Date(validatedData.joiningDate) : admissionDate,
-        feeMode: validatedData.feeMode,
-        customMonthlyFee: validatedData.feeMode === 'CUSTOM' ? validatedData.customMonthlyFee : null,
-        admissionFee: validatedData.admissionFee,
-        discountType: validatedData.discountType,
-        discountValue: validatedData.discountValue,
-        status: validatedData.status,
-      },
-      include: {
-        class: true,
-      },
-    });
-
-    let initialBilling = { created: 0, skipped: 0 };
-    if (validatedData.autoGenerateFees) {
-      initialBilling = await generateStudentBillingRecords(prisma, student.id, {
-        currentDate: new Date(),
-      });
-    }
-
-    await prisma.auditLog.create({
-      data: {
-        action: 'STUDENT_CREATED',
-        entity: 'STUDENT',
-        entityId: student.id,
-        details: {
+    const student = await prisma.$transaction(async (tx) => {
+      const createdStudent = await tx.student.create({
+        data: {
+          publicId: crypto.randomUUID(),
+          organizationId: auth.organizationId,
           studentCode,
-          name: student.name,
-          className: cls.name,
-          feeMode: student.feeMode,
-          admissionDate: formatYMD(admissionDate),
+          name: validatedData.name,
+          fatherName: validatedData.fatherName,
+          motherName: validatedData.motherName || null,
+          guardianName: validatedData.guardianName || null,
+          mobile: validatedData.mobile,
+          whatsappNumber: validatedData.whatsappNumber || null,
+          address: validatedData.address || null,
+          dob,
+          gender: validatedData.gender,
+          school: validatedData.school || null,
+          classId: validatedData.classId,
+          admissionDate,
+          joiningDate,
+          feeMode: validatedData.feeMode,
+          customMonthlyFee: validatedData.feeMode === 'CUSTOM' ? validatedData.customMonthlyFee : null,
+          admissionFee: validatedData.admissionFee ?? targetClass.defaultAdmissionFee,
+          discountType: validatedData.discountType,
+          discountValue: validatedData.discountValue,
+          status: 'ACTIVE',
         },
-      },
+        include: {
+          class: true,
+        },
+      });
+
+      // Automatically generate initial billing cycle
+      await generateStudentBillingRecords(tx, createdStudent.id, auth.organizationId, {
+        throughDate: new Date(),
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: auth.userId,
+          organizationId: auth.organizationId,
+          action: 'STUDENT_CREATED',
+          entity: 'Student',
+          entityId: createdStudent.id,
+          details: {
+            name: createdStudent.name,
+            studentCode: createdStudent.studentCode,
+            className: targetClass.name,
+            feeMode: createdStudent.feeMode,
+          },
+        },
+      });
+
+      return createdStudent;
     });
 
     return NextResponse.json(
       {
         success: true,
-        message: 'Student registered successfully',
-        data: {
-          student,
-          initialBilling,
-        },
+        data: student,
+        message: 'Student created successfully with automated initial billing cycle',
       },
       { status: 201 }
     );
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to create student' },
-      { status: 400 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

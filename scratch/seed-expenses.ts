@@ -1,10 +1,13 @@
 import prisma from '../src/lib/prisma';
 
+const DEFAULT_ORG_ID = 'e0000000-0000-4000-a000-000000000001';
+
 async function seedSampleExpenses() {
   console.log('--- Seeding Realistic Institute Expenses ---');
 
+  const org = (await prisma.organization.findFirst()) || { id: DEFAULT_ORG_ID };
   const admin = await prisma.user.findFirst();
-  const userId = admin?.id;
+  const userId = admin?.id || null;
 
   const sampleExpenses = [
     {
@@ -62,6 +65,7 @@ async function seedSampleExpenses() {
   for (const exp of sampleExpenses) {
     const created = await prisma.expense.create({
       data: {
+        organizationId: org.id,
         ...exp,
         recordedByUserId: userId,
       },

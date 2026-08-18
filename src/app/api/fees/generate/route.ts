@@ -3,14 +3,17 @@ import prisma from '@/lib/prisma';
 import { generateStudentBillingRecords, generateBatchBillingRecords } from '@/lib/billing-engine';
 import { generateFeesSchema } from '@/lib/validations/fee';
 import { createAuditLog } from '@/lib/audit';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(request);
+
     let body = {};
     try {
       body = await request.json();
     } catch {
-      // Empty body is acceptable (defaults to batch active generation)
+      // Empty body is acceptable
     }
 
     const validation = generateFeesSchema.safeParse(body);
@@ -26,16 +29,16 @@ export async function POST(request: NextRequest) {
     }
 
     const { studentId, classId, throughDate, currentDate } = validation.data;
-    const userId = request.headers.get('x-user-id') || null;
 
     if (studentId) {
-      const result = await generateStudentBillingRecords(prisma, studentId, {
+      const result = await generateStudentBillingRecords(prisma, studentId, auth.organizationId, {
         throughDate,
         currentDate,
       });
 
       await createAuditLog({
-        userId,
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'FEE_GENERATED',
         entity: 'FEE_RECORD',
         entityId: studentId,
@@ -47,23 +50,21 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      return NextResponse.json(
-        {
-          success: true,
-          message: `Generated ${result.created} billing record(s), skipped ${result.skipped} existing`,
-          data: result,
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({
+        success: true,
+        message: `Generated ${result.created} billing record(s), skipped ${result.skipped} existing`,
+        data: result,
+      });
     } else {
-      const result = await generateBatchBillingRecords(prisma, {
+      const result = await generateBatchBillingRecords(prisma, auth.organizationId, {
         classId,
         throughDate,
         currentDate,
       });
 
       await createAuditLog({
-        userId,
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'FEE_BATCH_GENERATED',
         entity: 'FEE_RECORD',
         details: {
@@ -75,25 +76,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      return NextResponse.json(
-        {
-          success: true,
-          message: `Batch generation complete: ${result.created} created, ${result.skipped} skipped across ${result.totalProcessed} active student(s)`,
-          data: result,
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({
+        success: true,
+        message: `Batch generation complete: ${result.created} created, ${result.skipped} skipped across ${result.totalProcessed} active student(s)`,
+        data: result,
+      });
     }
-  } catch (err: any) {
-    console.error('Error generating billing records:', err);
-    const status = err.message?.includes('not found') ? 404 : 400;
-    return NextResponse.json(
-      {
-        success: false,
-        error: err.message || 'An unexpected error occurred during fee generation',
-      },
-      { status }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
-

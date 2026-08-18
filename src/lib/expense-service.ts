@@ -13,12 +13,12 @@ export interface ExpenseFilterParams {
   limit?: number;
 }
 
-export async function getExpenses(params: ExpenseFilterParams = {}) {
+export async function getExpenses(params: ExpenseFilterParams = {}, organizationId: string) {
   const page = Math.max(1, params.page || 1);
   const limit = Math.max(1, Math.min(100, params.limit || 20));
   const skip = (page - 1) * limit;
 
-  const where: any = {};
+  const where: any = { organizationId };
 
   if (params.search) {
     where.OR = [
@@ -75,9 +75,10 @@ export async function getExpenses(params: ExpenseFilterParams = {}) {
   };
 }
 
-export async function createExpense(data: any, userId?: string) {
+export async function createExpense(data: any, organizationId: string, userId?: string) {
   const expense = await prisma.expense.create({
     data: {
+      organizationId,
       title: data.title,
       category: data.category,
       amount: data.amount,
@@ -93,30 +94,37 @@ export async function createExpense(data: any, userId?: string) {
 
   await createAuditLog({
     userId,
+    organizationId,
     action: 'EXPENSE_CREATED',
     entity: 'EXPENSE',
     entityId: expense.id,
     details: {
       title: expense.title,
-      category: expense.category,
       amount: expense.amount,
-      payeeName: expense.payeeName,
+      category: expense.category,
     },
   });
 
   return expense;
 }
 
-export async function updateExpense(id: string, data: any, userId?: string) {
-  const existing = await prisma.expense.findUnique({ where: { id } });
+export async function updateExpense(id: string, data: any, organizationId: string, userId?: string) {
+  const existing = await prisma.expense.findFirst({
+    where: { id, organizationId },
+  });
+
   if (!existing) {
-    throw new Error('Expense record not found');
+    throw new Error('Expense not found or unauthorized');
   }
 
   const updated = await prisma.expense.update({
     where: { id },
     data: {
-      ...data,
+      title: data.title ?? existing.title,
+      category: data.category ?? existing.category,
+      amount: data.amount ?? existing.amount,
+      expenseDate: data.expenseDate ?? existing.expenseDate,
+      paymentMethod: data.paymentMethod ?? existing.paymentMethod,
       referenceNumber: data.referenceNumber !== undefined ? data.referenceNumber : existing.referenceNumber,
       payeeName: data.payeeName !== undefined ? data.payeeName : existing.payeeName,
       notes: data.notes !== undefined ? data.notes : existing.notes,
@@ -126,149 +134,93 @@ export async function updateExpense(id: string, data: any, userId?: string) {
 
   await createAuditLog({
     userId,
+    organizationId,
     action: 'EXPENSE_UPDATED',
     entity: 'EXPENSE',
     entityId: id,
-    details: { changes: data },
+    details: { previous: existing, updated },
   });
 
   return updated;
 }
 
-export async function deleteExpense(id: string, userId?: string) {
-  const existing = await prisma.expense.findUnique({ where: { id } });
+export async function deleteExpense(id: string, organizationId: string, userId?: string) {
+  const existing = await prisma.expense.findFirst({
+    where: { id, organizationId },
+  });
+
   if (!existing) {
-    throw new Error('Expense record not found');
+    throw new Error('Expense not found or unauthorized');
   }
 
-  await prisma.expense.delete({ where: { id } });
+  await prisma.expense.delete({
+    where: { id },
+  });
 
   await createAuditLog({
     userId,
+    organizationId,
     action: 'EXPENSE_DELETED',
     entity: 'EXPENSE',
     entityId: id,
-    details: {
-      title: existing.title,
-      amount: existing.amount,
-      category: existing.category,
-    },
+    details: { deletedExpense: existing },
   });
 
   return { success: true };
 }
 
-export async function getExpenseStats() {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+export async function getExpenseById(id: string, organizationId: string) {
+  const expense = await prisma.expense.findFirst({
+    where: { id, organizationId },
+    include: {
+      recordedByUser: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
 
-  const [
-    allExpenses,
-    todayExpenses,
-    thisMonthExpenses,
-    lastMonthExpenses,
-    allPayments,
-    thisMonthPayments,
-  ] = await Promise.all([
-    prisma.expense.findMany({ select: { amount: true, category: true, expenseDate: true } }),
-    prisma.expense.findMany({
-      where: { expenseDate: { gte: startOfToday } },
-      select: { amount: true },
+  return expense;
+}
+
+export async function getExpenseSummary(organizationId: string, startDate?: string, endDate?: string) {
+  const where: any = { organizationId };
+
+  if (startDate || endDate) {
+    where.expenseDate = {};
+    if (startDate) where.expenseDate.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      where.expenseDate.lte = end;
+    }
+  }
+
+  const [totalAgg, categoryAgg] = await Promise.all([
+    prisma.expense.aggregate({
+      where,
+      _sum: { amount: true },
+      _count: { id: true },
     }),
-    prisma.expense.findMany({
-      where: { expenseDate: { gte: startOfMonth } },
-      select: { amount: true, category: true },
-    }),
-    prisma.expense.findMany({
-      where: { expenseDate: { gte: startOfLastMonth, lte: endOfLastMonth } },
-      select: { amount: true },
-    }),
-    prisma.payment.findMany({ select: { amount: true } }),
-    prisma.payment.findMany({
-      where: { paymentDate: { gte: startOfMonth } },
-      select: { amount: true },
+    prisma.expense.groupBy({
+      by: ['category'],
+      where,
+      _sum: { amount: true },
+      _count: { id: true },
     }),
   ]);
 
-  const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const todayExpense = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const thisMonthExpense = thisMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const lastMonthExpense = lastMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
-
-  const totalIncome = allPayments.reduce((sum, p) => sum + p.amount, 0);
-  const thisMonthIncome = thisMonthPayments.reduce((sum, p) => sum + p.amount, 0);
-
-  const netSurplusAllTime = totalIncome - totalExpense;
-  const netSurplusThisMonth = thisMonthIncome - thisMonthExpense;
-
-  // Category distribution for this month / all time
-  const categoryMap: Record<string, number> = {};
-  thisMonthExpenses.forEach((e) => {
-    categoryMap[e.category] = (categoryMap[e.category] || 0) + e.amount;
-  });
-
-  const categoryBreakdown = Object.entries(categoryMap).map(([cat, amount]) => {
-    const meta = EXPENSE_CATEGORY_LABELS[cat as ExpenseCategory] || { label: cat, color: '#64748B' };
-    return {
-      category: cat,
-      label: meta.label,
-      amount,
-      color: meta.color,
-      percentage: thisMonthExpense > 0 ? Math.round((amount / thisMonthExpense) * 100) : 0,
-    };
-  }).sort((a, b) => b.amount - a.amount);
-
-  // Identify top category
-  const topCategory = categoryBreakdown[0] || null;
+  const categoryBreakdown = categoryAgg.map((item) => ({
+    category: item.category,
+    label: EXPENSE_CATEGORY_LABELS[item.category] || item.category,
+    totalAmount: item._sum.amount || 0,
+    count: item._count.id,
+  }));
 
   return {
-    todayExpense,
-    thisMonthExpense,
-    lastMonthExpense,
-    totalExpense,
-    totalIncome,
-    thisMonthIncome,
-    netSurplusThisMonth,
-    netSurplusAllTime,
-    topCategory,
+    totalExpenses: totalAgg._sum.amount || 0,
+    expenseCount: totalAgg._count.id || 0,
     categoryBreakdown,
   };
 }
 
-export function generateExpensesCsv(expenses: any[]): string {
-  const headers = [
-    'Date',
-    'Expense Title',
-    'Category',
-    'Amount (INR)',
-    'Payment Method',
-    'Payee / Vendor',
-    'Reference / Bill No',
-    'Notes',
-  ];
-
-  const rows = expenses.map((e) => {
-    const dateStr = new Date(e.expenseDate).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-    const catLabel = EXPENSE_CATEGORY_LABELS[e.category as ExpenseCategory]?.label || e.category;
-
-    return [
-      `"${dateStr}"`,
-      `"${(e.title || '').replace(/"/g, '""')}"`,
-      `"${catLabel}"`,
-      `"${e.amount.toFixed(2)}"`,
-      `"${e.paymentMethod}"`,
-      `"${(e.payeeName || '').replace(/"/g, '""')}"`,
-      `"${(e.referenceNumber || '').replace(/"/g, '""')}"`,
-      `"${(e.notes || '').replace(/"/g, '""')}"`,
-    ].join(',');
-  });
-
-  return [headers.join(','), ...rows].join('\r\n');
-}
+export const getExpenseStats = getExpenseSummary;

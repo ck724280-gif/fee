@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { createClassSchema, classFilterSchema } from '@/lib/validations/class';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     const url = new URL(req.url);
     const searchParams = Object.fromEntries(url.searchParams.entries());
     const query = classFilterSchema.parse(searchParams);
 
-    const where: any = {};
+    const where: any = {
+      organizationId: auth.organizationId,
+    };
     if (query.status) {
       where.status = query.status;
     }
@@ -49,32 +54,35 @@ export async function GET(req: NextRequest) {
       success: true,
       data: formatted,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch classes' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req, { allowedRoles: ['ORGANIZATION_ADMIN', 'SUPER_ADMIN'] });
+
     const body = await req.json();
     const validatedData = createClassSchema.parse(body);
 
-    const existing = await prisma.class.findUnique({
-      where: { name: validatedData.name },
+    const existing = await prisma.class.findFirst({
+      where: {
+        name: validatedData.name,
+        organizationId: auth.organizationId,
+      },
     });
 
     if (existing) {
       return NextResponse.json(
-        { success: false, error: `Class with name "${validatedData.name}" already exists` },
+        { success: false, error: `Class with name "${validatedData.name}" already exists in your organization` },
         { status: 409 }
       );
     }
 
     const newClass = await prisma.class.create({
       data: {
+        organizationId: auth.organizationId,
         name: validatedData.name,
         defaultMonthlyFee: validatedData.defaultMonthlyFee,
         defaultAdmissionFee: validatedData.defaultAdmissionFee,
@@ -88,6 +96,8 @@ export async function POST(req: NextRequest) {
 
     await prisma.auditLog.create({
       data: {
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'CLASS_CREATED',
         entity: 'CLASS',
         entityId: newClass.id,
@@ -99,10 +109,7 @@ export async function POST(req: NextRequest) {
       { success: true, message: 'Class created successfully', data: newClass },
       { status: 201 }
     );
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to create class' },
-      { status: 400 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

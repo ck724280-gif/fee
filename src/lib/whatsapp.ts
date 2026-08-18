@@ -30,7 +30,8 @@ export function buildWhatsAppUrl(phone: string, message: string): string {
 export interface FeeReminderData {
   studentName: string;
   className: string;
-  dueAmount: number;
+  dueAmount?: number;
+  amountDue?: number;
   dueDateStr: string;
   billingPeriodStr?: string;
   documentUrl: string;
@@ -39,8 +40,9 @@ export interface FeeReminderData {
 }
 
 export function generateFeeReminderMessage(data: FeeReminderData): string {
-  const institute = data.instituteName || 'DPR Private Tuition';
-  const phone = data.contactPhone || '+91 98765 43210';
+  const institute = data.instituteName || 'Education Institute';
+  const phone = data.contactPhone || '';
+  const due = data.dueAmount ?? data.amountDue ?? 0;
 
   const lines = [
     `Dear Parent/Student,`,
@@ -48,7 +50,7 @@ export function generateFeeReminderMessage(data: FeeReminderData): string {
     `This is a gentle fee reminder from *${institute}* for *${data.studentName}* (${data.className}).`,
     ``,
     data.billingPeriodStr ? `📌 *Billing Period*: ${data.billingPeriodStr}` : null,
-    `💰 *Amount Due*: *₹${data.dueAmount.toLocaleString('en-IN')}*`,
+    `💰 *Amount Due*: *₹${due.toLocaleString('en-IN')}*`,
     `📅 *Due Date*: *${data.dueDateStr}*`,
     ``,
     `📄 *View / Download Fee Notice*:`,
@@ -59,7 +61,7 @@ export function generateFeeReminderMessage(data: FeeReminderData): string {
     ``,
     `Thank you,`,
     `*${institute}*`,
-    `📞 ${phone}`,
+    phone ? `📞 ${phone}` : null,
   ];
 
   return lines.filter((l) => l !== null).join('\n');
@@ -78,8 +80,8 @@ export interface PaymentReceiptData {
 }
 
 export function generatePaymentReceiptMessage(data: PaymentReceiptData): string {
-  const institute = data.instituteName || 'DPR Private Tuition';
-  const phone = data.contactPhone || '+91 98765 43210';
+  const institute = data.instituteName || 'Education Institute';
+  const phone = data.contactPhone || '';
 
   const lines = [
     `Dear Parent/Student,`,
@@ -88,17 +90,17 @@ export function generatePaymentReceiptMessage(data: PaymentReceiptData): string 
     ``,
     `🧾 *Receipt No*: *${data.receiptNumber}*`,
     `💵 *Amount Paid*: *₹${data.paidAmount.toLocaleString('en-IN')}*`,
-    data.paymentMethod ? `💳 *Payment Method*: ${data.paymentMethod}` : null,
-    `📊 *Remaining Balance*: *₹${data.outstandingAmount.toLocaleString('en-IN')}*`,
+    data.paymentMethod ? `💳 Payment Method: ${data.paymentMethod}` : null,
+    `📊 Remaining Balance: *₹${data.outstandingAmount.toLocaleString('en-IN')}*`,
     ``,
     `📄 *Download Official Receipt PDF*:`,
     `${data.documentUrl}`,
     ``,
     `Thank you for your prompt payment and cooperation.`,
     ``,
-    `Warm regards,`,
+    `Best regards,`,
     `*${institute}*`,
-    `📞 ${phone}`,
+    phone ? `📞 ${phone}` : null,
   ];
 
   return lines.filter((l) => l !== null).join('\n');
@@ -107,49 +109,53 @@ export function generatePaymentReceiptMessage(data: PaymentReceiptData): string 
 export interface OverdueNoticeData {
   studentName: string;
   className: string;
-  overdueAmount: number;
-  dueDateStr: string;
+  outstandingAmount?: number;
+  overdueAmount?: number;
   overdueDays: number;
+  dueDateStr: string;
   documentUrl: string;
   instituteName?: string;
   contactPhone?: string;
 }
 
 export function generateOverdueNoticeMessage(data: OverdueNoticeData): string {
-  const institute = data.instituteName || 'DPR Private Tuition';
-  const phone = data.contactPhone || '+91 98765 43210';
+  const institute = data.instituteName || 'Education Institute';
+  const phone = data.contactPhone || '';
+  const overdue = data.overdueAmount ?? data.outstandingAmount ?? 0;
 
   const lines = [
-    `⚠️ *URGENT FEE NOTICE — ${institute.toUpperCase()}*`,
+    `⚠️ *URGENT FEE NOTICE* ⚠️`,
     ``,
     `Dear Parent/Student,`,
     ``,
-    `Our records indicate an overdue fee balance for *${data.studentName}* (${data.className}).`,
+    `This is an overdue fee notification from *${institute}* for *${data.studentName}* (${data.className}).`,
     ``,
-    `📌 *Overdue Amount*: *₹${data.overdueAmount.toLocaleString('en-IN')}*`,
-    `📅 *Originally Due Date*: *${data.dueDateStr}*`,
-    `⏳ *Days Overdue*: *${data.overdueDays} days*`,
+    `❗ *Outstanding Fee*: *₹${overdue.toLocaleString('en-IN')}*`,
+    `📅 *Original Due Date*: *${data.dueDateStr}*`,
+    `⏳ *Overdue By*: *${data.overdueDays} days*`,
     ``,
-    `📄 *View Official Notice*:`,
+    `📄 *View Overdue Notice & Clear Dues*:`,
     `${data.documentUrl}`,
     ``,
-    `Please clear the outstanding dues at your earliest convenience. If you have already paid, kindly share the receipt transaction reference.`,
+    `Please clear the outstanding amount immediately to avoid disruption in academic classes.`,
     ``,
-    `Thank you,`,
+    `For any assistance, please contact the institute office.`,
+    ``,
+    `Regards,`,
     `*${institute}*`,
-    `📞 ${phone}`,
+    phone ? `📞 ${phone}` : null,
   ];
 
   return lines.filter((l) => l !== null).join('\n');
 }
 
-export const WhatsAppService = {
-  sanitizePhone: sanitizeIndianPhone,
-  isValidPhone: isValidIndianPhone,
-  buildClickToChatUrl: buildWhatsAppUrl,
-  generateReminderMessage: generateFeeReminderMessage,
-  generateReceiptMessage: generatePaymentReceiptMessage,
-  generateOverdueMessage: generateOverdueNoticeMessage,
+export const WhatsApp = {
+  sanitizeIndianPhone,
+  isValidIndianPhone,
+  buildWhatsAppUrl,
+  generateFeeReminderMessage,
+  generatePaymentReceiptMessage,
+  generateOverdueNoticeMessage,
 };
 
-export default WhatsAppService;
+export default WhatsApp;

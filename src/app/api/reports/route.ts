@@ -11,9 +11,12 @@ import {
   getDiscountReport,
   getDailyCollectionReport,
 } from '@/lib/reports-service';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     const url = new URL(req.url);
     const searchParams = Object.fromEntries(url.searchParams.entries());
     const query = reportQuerySchema.parse(searchParams);
@@ -22,16 +25,16 @@ export async function GET(req: NextRequest) {
 
     switch (query.type) {
       case 'MONTHLY_COLLECTION':
-        reportData = await getMonthlyCollectionReport(prisma, query);
+        reportData = await getMonthlyCollectionReport(prisma, auth.organizationId, query);
         break;
       case 'OVERDUE_FEES':
-        reportData = await getOverdueFeesReport(prisma, query);
+        reportData = await getOverdueFeesReport(prisma, auth.organizationId, query);
         break;
       case 'CLASS_WISE_REVENUE':
-        reportData = await getClassWiseRevenueReport(prisma, query);
+        reportData = await getClassWiseRevenueReport(prisma, auth.organizationId, query);
         break;
       case 'PAYMENT_METHOD_DISTRIBUTION':
-        reportData = await getPaymentMethodDistributionReport(prisma, query);
+        reportData = await getPaymentMethodDistributionReport(prisma, auth.organizationId, query);
         break;
       case 'STUDENT_STATEMENT':
         if (!query.studentId) {
@@ -40,16 +43,16 @@ export async function GET(req: NextRequest) {
             { status: 400 }
           );
         }
-        reportData = await getStudentStatementReport(prisma, query.studentId, query);
+        reportData = await getStudentStatementReport(prisma, query.studentId, auth.organizationId, query);
         break;
       case 'ADMISSIONS_REPORT':
-        reportData = await getAdmissionsReport(prisma, query);
+        reportData = await getAdmissionsReport(prisma, auth.organizationId, query);
         break;
       case 'DISCOUNT_REPORT':
-        reportData = await getDiscountReport(prisma, query);
+        reportData = await getDiscountReport(prisma, auth.organizationId, query);
         break;
       case 'DAILY_COLLECTION':
-        reportData = await getDailyCollectionReport(prisma, query);
+        reportData = await getDailyCollectionReport(prisma, auth.organizationId, query);
         break;
       default:
         return NextResponse.json(
@@ -65,10 +68,7 @@ export async function GET(req: NextRequest) {
         ...reportData,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to generate report' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

@@ -76,17 +76,17 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
     }
   }
 
-  const settings = (await prisma.instituteSetting.findFirst()) || {
-    instituteName: 'DPR Private Tuition',
+  const settings = (fee?.organizationId ? await prisma.organizationSetting.findUnique({ where: { organizationId: fee.organizationId } }) : await prisma.organizationSetting.findFirst()) || {
+    instituteName: 'Education Institute',
     tagline: 'Excellence in Academic Coaching & Guidance',
-    address: 'Station Road, Near City Center, West Bengal',
+    address: 'Station Road, Near City Center',
     phone: '+91 98765 43210',
     whatsapp: '+91 98765 43210',
-    email: 'info@dprtuition.com',
-    upiId: 'dprtuition@upi',
-    upiPayeeName: 'DPR Private Tuition',
+    email: 'info@institute.com',
+    upiId: 'institute@upi',
+    upiPayeeName: 'Education Institute',
     upiEnabled: true,
-    receiptPrefix: 'DPR-RC',
+    receiptPrefix: 'RC',
     customQrUrl: null as string | null,
   };
 
@@ -124,6 +124,7 @@ export default async function PublicFeeNoticePage({ params }: PageProps) {
   if (!doc) {
     doc = await prisma.document.create({
       data: {
+        organizationId: fee.organizationId,
         token: crypto.randomUUID(),
         documentType: 'REMINDER',
         referenceId: fee.id,

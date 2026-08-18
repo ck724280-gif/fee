@@ -1,23 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth';
-import { recordPayment } from '@/lib/payment-service';
+import { approveUpiSubmission, rejectUpiSubmission } from '@/lib/payment-service';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getCurrentUser(req);
-    let userId = req.headers.get('x-user-id') || session?.userId;
-
-    if (!userId) {
-      const adminUser = await prisma.user.findFirst();
-      userId = adminUser?.id;
-    }
+    const auth = await authorizeOrgRequest(req);
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status')?.toUpperCase() || 'ALL';
     const search = searchParams.get('search')?.trim() || '';
 
-    const where: any = {};
+    const where: any = {
+      organizationId: auth.organizationId,
+    };
 
     if (status !== 'ALL' && ['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
       where.status = status;
@@ -31,23 +27,27 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const submissions = await prisma.upiSubmission.findMany({
-      where,
-      include: {
-        student: {
-          include: { class: true },
+    const [submissions, pendingCount] = await Promise.all([
+      prisma.upiSubmission.findMany({
+        where,
+        include: {
+          student: {
+            include: { class: true },
+          },
+          feeRecord: {
+            include: { class: true },
+          },
         },
-        feeRecord: {
-          include: { class: true },
+        orderBy: { submittedAt: 'desc' },
+        take: 100,
+      }),
+      prisma.upiSubmission.count({
+        where: {
+          organizationId: auth.organizationId,
+          status: 'PENDING',
         },
-      },
-      orderBy: { submittedAt: 'desc' },
-      take: 100,
-    });
-
-    const pendingCount = await prisma.upiSubmission.count({
-      where: { status: 'PENDING' },
-    });
+      }),
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -57,24 +57,14 @@ export async function GET(req: NextRequest) {
         pendingCount,
       },
     });
-  } catch (error: any) {
-    console.error('Fetch UPI submissions error:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch payment submissions' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getCurrentUser(req);
-    let userId = req.headers.get('x-user-id') || session?.userId;
-
-    if (!userId) {
-      const adminUser = await prisma.user.findFirst();
-      userId = adminUser?.id || undefined;
-    }
+    const auth = await authorizeOrgRequest(req);
 
     const body = await req.json();
     const { submissionId, action, rejectionReason } = body;
@@ -86,89 +76,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const submission = await prisma.upiSubmission.findUnique({
-      where: { id: submissionId },
-      include: {
-        feeRecord: true,
-        student: { include: { class: true } },
-      },
-    });
-
-    if (!submission) {
-      return NextResponse.json(
-        { success: false, error: 'UPI Submission record not found.' },
-        { status: 404 }
+    if (action === 'APPROVE') {
+      const result = await approveUpiSubmission(
+        submissionId,
+        auth.organizationId,
+        auth.userId
       );
-    }
-
-    if (submission.status !== 'PENDING') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `This submission has already been processed with status: ${submission.status}.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // 1. REJECT ACTION
-    if (action === 'REJECT') {
-      const reason = rejectionReason?.trim() || 'Payment not found in institute bank account statement.';
-
-      const updated = await prisma.upiSubmission.update({
-        where: { id: submission.id },
-        data: {
-          status: 'REJECTED',
-          rejectionReason: reason,
-          reviewedAt: new Date(),
-          reviewedByUserId: userId,
-        },
-      });
 
       return NextResponse.json({
         success: true,
-        message: 'Payment proof rejected successfully. Student invoice will prompt for the correct UTR.',
-        data: updated,
+        message: `UPI payment approved successfully! Receipt ${result.receiptNumber} generated.`,
+        data: result,
+      });
+    } else {
+      const result = await rejectUpiSubmission(
+        submissionId,
+        auth.organizationId,
+        rejectionReason || 'Invalid UTR or payment not received.',
+        auth.userId
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: 'UPI payment proof was rejected.',
+        data: result,
       });
     }
-
-    // 2. APPROVE ACTION -> Record payment, update fee record, generate receipt
-    const result = await recordPayment({
-      feeRecordId: submission.feeRecordId,
-      amount: submission.amount,
-      paymentMethod: 'UPI',
-      transactionId: submission.utrNumber,
-      notes: `Online UPI Verified (UTR: ${submission.utrNumber})`,
-      paymentDate: submission.submittedAt,
-      recordedByUserId: userId || undefined,
-    });
-
-    const payment = result.payment;
-
-    // Update submission record to APPROVED
-    const updated = await prisma.upiSubmission.update({
-      where: { id: submission.id },
-      data: {
-        status: 'APPROVED',
-        approvedPaymentId: payment.id,
-        reviewedAt: new Date(),
-        reviewedByUserId: userId,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: `Payment verified & approved successfully! Receipt ${payment.receiptNumber} issued.`,
-      data: {
-        submission: updated,
-        payment,
-      },
-    });
-  } catch (error: any) {
-    console.error('Process UPI submission error:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to process UPI submission' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listAuditLogs } from '@/lib/audit';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     const { searchParams } = new URL(req.url);
 
     const action = searchParams.get('action') || undefined;
@@ -16,6 +19,7 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '25', 10);
 
     const result = await listAuditLogs({
+      organizationId: auth.organizationId,
       action,
       entity,
       entityId,
@@ -27,22 +31,12 @@ export async function GET(req: NextRequest) {
       limit: isNaN(limit) || limit < 1 ? 25 : Math.min(limit, 100),
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: result.logs,
-        pagination: result.pagination,
-      },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error('Error fetching audit logs:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to retrieve audit logs',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      pagination: result.pagination,
+    });
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

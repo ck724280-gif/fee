@@ -1,42 +1,34 @@
-import { PrismaClient, FeeMode, DiscountType, FeeStatus, StudentStatus, LateFeeType } from '@prisma/client';
+import { PrismaClient, FeeStatus, StudentStatus, DiscountType, LateFeeType, FeeMode, Prisma } from '@prisma/client';
 import prisma from './prisma';
+
+const DEFAULT_ORG_ID = 'e0000000-0000-4000-a000-000000000001';
 
 export interface BillingCycle {
   cycleIndex: number;
   periodStart: Date;
   periodEnd: Date;
   dueDate: Date;
-  periodStartStr: string; // 'yyyy-MM-dd'
-  periodEndStr: string;   // 'yyyy-MM-dd'
-  dueDateStr: string;     // 'yyyy-MM-dd'
+  periodStartStr: string;
+  periodEndStr: string;
+  dueDateStr: string;
 }
 
-export interface PricingBreakdown {
+export interface FeeBreakdown {
   baseAmount: number;
   admissionFeeAmount: number;
-  discountType: DiscountType;
-  discountValue: number;
   discountAmount: number;
   lateFeeAmount: number;
-  netFeeAmount: number;
   totalAmount: number;
+  effectiveMonthlyFee: number;
+  netFeeAmount: number;
 }
 
-export interface FeeCalculationInput {
-  feeMode: FeeMode | 'DEFAULT' | 'CUSTOM';
+export interface PricingResolutionInput {
+  feeMode: FeeMode | string;
   classDefaultFee: number;
   customMonthlyFee?: number | null;
-  discountType?: DiscountType | 'NONE' | 'FIXED' | 'PERCENTAGE';
+  discountType?: DiscountType | string;
   discountValue?: number;
-  admissionFee?: number;
-  isFirstCycle?: boolean;
-  lateFeeEnabled?: boolean;
-  lateFeeType?: LateFeeType | 'FIXED' | 'PER_DAY';
-  lateFeeAmount?: number;
-  graceDays?: number;
-  dueDate?: Date | string;
-  currentDate?: Date | string;
-  paidAmount?: number;
 }
 
 export interface GenerateStudentBillingOptions {
@@ -65,70 +57,42 @@ export interface GenerateBatchBillingResult {
   errors: Array<{ studentId: string; error: string }>;
 }
 
-/**
- * Formats a Date object to YYYY-MM-DD string format safely in local/UTC.
- */
-export function formatYMD(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+export function startOfDay(date: Date | string): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function formatYMD(date: Date | string): string {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-/**
- * Returns a normalized Date set to midnight (00:00:00.000).
- */
-export function startOfDay(date: Date | string): Date {
-  const d = typeof date === 'string' ? new Date(date) : new Date(date.getTime());
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-}
-
-/**
- * Calculates a specific billing cycle (0-indexed) for a student
- * based on their permanent admission date anchor.
- *
- * Implements anchor day preservation across 28th, 29th, 30th, 31st and leap year Feb 29
- * with automatic month-end clamping and subsequent month anchor recovery.
- *
- * @param admissionDate - The student's official admission date
- * @param cycleIndex - 0 for first month, 1 for second month, etc.
- * @returns BillingCycle with exact start, end, and due dates
- */
 export function calculateBillingCycle(
   admissionDate: Date | string,
   cycleIndex: number
 ): BillingCycle {
-  const initialDate = typeof admissionDate === 'string'
-    ? new Date(admissionDate)
-    : admissionDate;
+  const adm = startOfDay(admissionDate);
+  const anchorDay = adm.getDate();
 
-  if (isNaN(initialDate.getTime())) {
-    throw new Error(`Invalid admission date provided: ${admissionDate}`);
-  }
+  const startYear = adm.getFullYear();
+  const startMonth = adm.getMonth() + cycleIndex;
 
-  const anchorDay = initialDate.getDate();
-  const baseYear = initialDate.getFullYear();
-  const baseMonth = initialDate.getMonth(); // 0-indexed
+  const maxStartDaysInMonth = new Date(startYear, startMonth + 1, 0).getDate();
+  const effectiveStartDay = Math.min(anchorDay, maxStartDaysInMonth);
+  const periodStart = new Date(startYear, startMonth, effectiveStartDay, 0, 0, 0, 0);
 
-  // 1. Calculate Period Start for Cycle k:
-  const targetYear = baseYear + Math.floor((baseMonth + cycleIndex) / 12);
-  const targetMonth = ((baseMonth + cycleIndex) % 12 + 12) % 12;
-  const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-  const clampedDayK = Math.min(anchorDay, daysInTargetMonth);
-  const periodStart = new Date(targetYear, targetMonth, clampedDayK, 0, 0, 0, 0);
+  const endYear = startYear;
+  const endMonth = startMonth + 1;
+  const maxEndDaysInMonth = new Date(endYear, endMonth + 1, 0).getDate();
+  const effectiveEndAnchorDay = Math.min(anchorDay, maxEndDaysInMonth);
 
-  // 2. Calculate Start Date for Cycle k + 1:
-  const nextTargetYear = baseYear + Math.floor((baseMonth + cycleIndex + 1) / 12);
-  const nextTargetMonth = ((baseMonth + cycleIndex + 1) % 12 + 12) % 12;
-  const daysInNextMonth = new Date(nextTargetYear, nextTargetMonth + 1, 0).getDate();
-  const clampedDayKPlus1 = Math.min(anchorDay, daysInNextMonth);
-  const nextPeriodStart = new Date(nextTargetYear, nextTargetMonth, clampedDayKPlus1, 0, 0, 0, 0);
-
-  // 3. Period End is strictly 1 day prior to next cycle start:
-  const periodEnd = new Date(nextPeriodStart.getTime() - 24 * 60 * 60 * 1000);
-
-  // 4. Due Date is the commencement of next cycle:
-  const dueDate = nextPeriodStart;
+  const nextAnchorDate = new Date(endYear, endMonth, effectiveEndAnchorDay, 0, 0, 0, 0);
+  const periodEnd = new Date(nextAnchorDate.getTime() - 24 * 60 * 60 * 1000);
+  const dueDate = nextAnchorDate;
 
   return {
     cycleIndex,
@@ -141,200 +105,211 @@ export function calculateBillingCycle(
   };
 }
 
-/**
- * Generates all billing cycles for a student up to a target evaluation date.
- */
 export function getBillingCyclesUpToDate(
   admissionDate: Date | string,
-  targetDate: Date | string = new Date()
+  throughDate: Date | string = new Date()
 ): BillingCycle[] {
-  const target = startOfDay(targetDate);
+  const adm = startOfDay(admissionDate);
+  const target = startOfDay(throughDate);
+
+  if (adm.getTime() > target.getTime()) {
+    return [calculateBillingCycle(adm, 0)];
+  }
+
   const cycles: BillingCycle[] = [];
-  let index = 0;
+  let cycleIdx = 0;
 
   while (true) {
-    const cycle = calculateBillingCycle(admissionDate, index);
-    // If the cycle's periodStart is strictly after the target date, stop
+    const cycle = calculateBillingCycle(adm, cycleIdx);
+
     if (cycle.periodStart.getTime() > target.getTime()) {
       break;
     }
+
     cycles.push(cycle);
-    index++;
+
+    if (cycle.periodStart.getTime() >= target.getTime() || cycles.length >= 600) {
+      break;
+    }
+
+    cycleIdx++;
   }
 
   return cycles;
 }
 
-/**
- * Calculates optional class late fee based on due date and grace period.
- */
 export function calculateLateFee(
-  cls: {
-    lateFeeEnabled: boolean;
-    lateFeeType?: LateFeeType | 'FIXED' | 'PER_DAY';
-    lateFeeAmount?: number;
-    graceDays?: number;
-  },
-  feeRecord: {
-    dueDate: Date | string;
-    totalAmount: number;
-    paidAmount: number;
-  },
-  currentDate: Date | string = new Date()
+  arg1: any,
+  arg2?: any,
+  arg3?: any
 ): number {
-  if (!cls.lateFeeEnabled) return 0;
-  if (feeRecord.paidAmount >= feeRecord.totalAmount) return 0;
+  let dueDate: Date | string;
+  let currentDate: Date | string = new Date();
+  let rule: any = {};
 
-  const due = startOfDay(feeRecord.dueDate);
-  const now = startOfDay(currentDate);
-  const diffDays = Math.round((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-  const grace = cls.graceDays || 0;
-
-  if (diffDays <= grace) return 0;
-
-  const lateAmount = cls.lateFeeAmount || 0;
-  if (cls.lateFeeType === 'FIXED') {
-    return lateAmount;
-  } else {
-    const overdueDays = diffDays - grace;
-    return overdueDays * lateAmount;
+  // Signature Pattern 1: (rule, feeRecord, currentDate)
+  if (arg1 && typeof arg1 === 'object' && arg2 && typeof arg2 === 'object' && ('dueDate' in arg2 || 'totalAmount' in arg2)) {
+    rule = arg1;
+    dueDate = arg2.dueDate;
+    if (arg2.totalAmount !== undefined && arg2.paidAmount !== undefined && arg2.paidAmount >= arg2.totalAmount) {
+      return 0; // Already fully paid
+    }
+    if (arg3) currentDate = arg3;
   }
+  // Signature Pattern 2: (dueDate, currentDateOrRule, maybeRule)
+  else {
+    dueDate = arg1;
+    if (arg2 && typeof arg2 === 'object' && !(arg2 instanceof Date)) {
+      rule = arg2;
+      currentDate = new Date();
+    } else {
+      if (arg2) currentDate = arg2;
+      if (arg3) rule = arg3;
+    }
+  }
+
+  const isEnabled = rule.enabled ?? rule.lateFeeEnabled ?? true;
+  const rawAmount = rule.amount ?? rule.lateFeeAmount ?? 0;
+  const feeType = rule.type ?? rule.lateFeeType ?? 'FIXED';
+  const graceDays = rule.graceDays ?? 0;
+
+  if (!isEnabled || !rawAmount || rawAmount <= 0) {
+    return 0;
+  }
+
+  const due = startOfDay(dueDate);
+  const current = startOfDay(currentDate);
+
+  if (current.getTime() <= due.getTime()) {
+    return 0;
+  }
+
+  const diffMs = current.getTime() - due.getTime();
+  const overdueDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (overdueDays <= graceDays) {
+    return 0;
+  }
+
+  const billableDays = overdueDays - graceDays;
+
+  if (feeType === 'DAILY' || feeType === 'PER_DAY' || feeType === LateFeeType.PER_DAY) {
+    return billableDays * rawAmount;
+  }
+
+  return rawAmount;
 }
 
-/**
- * Resolves student cycle pricing, discount applications, and optional late fees.
- */
-export function calculateFeeBreakdown(input: FeeCalculationInput): PricingBreakdown {
-  // 1. Resolve Base Monthly Fee
-  let baseAmount = 0;
-  if (input.feeMode === 'CUSTOM') {
-    if (
-      input.customMonthlyFee === null ||
-      input.customMonthlyFee === undefined ||
-      input.customMonthlyFee < 0
-    ) {
-      throw new Error('Custom fee mode requires a non-negative customMonthlyFee');
+export function resolvePricing(input: PricingResolutionInput): {
+  baseAmount: number;
+  discountAmount: number;
+  effectiveMonthlyFee: number;
+} {
+  let baseAmount = input.classDefaultFee;
+  if (input.feeMode === FeeMode.CUSTOM || input.feeMode === 'CUSTOM') {
+    if (input.customMonthlyFee === undefined || input.customMonthlyFee === null || input.customMonthlyFee < 0) {
+      throw new Error('CUSTOM fee mode requires a non-negative customMonthlyFee');
     }
-    baseAmount = Number(input.customMonthlyFee);
-  } else {
-    baseAmount = Number(input.classDefaultFee || 0);
+    baseAmount = input.customMonthlyFee;
   }
 
-  // 2. Resolve Discount
-  let discountAmount = 0;
-  const discountType = (input.discountType || 'NONE') as DiscountType;
-  const discountValue = Number(input.discountValue || 0);
+  const discountType = input.discountType || 'NONE';
+  const rawDiscountValue = input.discountValue ?? 0;
 
-  if (discountType === 'FIXED') {
-    discountAmount = Math.min(discountValue, baseAmount);
-  } else if (discountType === 'PERCENTAGE') {
-    const pct = Math.min(Math.max(discountValue, 0), 100);
+  let discountAmount = 0;
+  if (discountType === DiscountType.FIXED || discountType === 'FIXED') {
+    discountAmount = Math.max(0, Math.min(rawDiscountValue, baseAmount));
+  } else if (discountType === DiscountType.PERCENTAGE || discountType === 'PERCENTAGE') {
+    const pct = Math.max(0, Math.min(100, rawDiscountValue));
     discountAmount = Math.round((baseAmount * pct) / 100);
   }
 
-  // 3. Admission Fee (Cycle 0 only)
-  const admissionFeeAmount = input.isFirstCycle ? Number(input.admissionFee || 0) : 0;
+  const effectiveMonthlyFee = Math.max(0, baseAmount - discountAmount);
 
-  // 4. Net Monthly Fee
-  const netFeeAmount = Math.max(0, baseAmount - discountAmount);
+  return {
+    baseAmount,
+    discountAmount,
+    effectiveMonthlyFee,
+  };
+}
 
-  // 5. Late Fee Computation
-  let lateFeeAmount = 0;
-  if (input.lateFeeEnabled && input.dueDate) {
-    lateFeeAmount = calculateLateFee(
-      {
-        lateFeeEnabled: input.lateFeeEnabled,
-        lateFeeType: input.lateFeeType,
-        lateFeeAmount: input.lateFeeAmount,
-        graceDays: input.graceDays,
-      },
-      {
-        dueDate: input.dueDate,
-        totalAmount: netFeeAmount + admissionFeeAmount,
-        paidAmount: input.paidAmount || 0,
-      },
-      input.currentDate || new Date()
-    );
+export function calculateFeeBreakdown(input: {
+  feeMode: FeeMode | string;
+  classDefaultFee: number;
+  customMonthlyFee?: number | null;
+  discountType?: DiscountType | string;
+  discountValue?: number;
+  admissionFee?: number | null;
+  isFirstCycle?: boolean;
+  lateFeeEnabled?: boolean;
+  lateFeeType?: LateFeeType | string;
+  lateFeeAmount?: number;
+  graceDays?: number;
+  dueDate?: Date | string;
+  currentDate?: Date | string;
+}): FeeBreakdown {
+  const { baseAmount, discountAmount, effectiveMonthlyFee } = resolvePricing({
+    feeMode: input.feeMode,
+    classDefaultFee: input.classDefaultFee,
+    customMonthlyFee: input.customMonthlyFee,
+    discountType: input.discountType,
+    discountValue: input.discountValue,
+  });
+
+  let admissionFeeAmount = 0;
+  if (input.isFirstCycle && input.admissionFee && input.admissionFee > 0) {
+    admissionFeeAmount = input.admissionFee;
   }
 
-  const totalAmount = netFeeAmount + admissionFeeAmount + lateFeeAmount;
+  let lateFee = 0;
+  if (input.lateFeeEnabled && input.dueDate && input.currentDate) {
+    lateFee = calculateLateFee(input.dueDate, input.currentDate, {
+      enabled: Boolean(input.lateFeeEnabled),
+      type: input.lateFeeType,
+      amount: input.lateFeeAmount,
+      graceDays: input.graceDays,
+    });
+  }
+
+  const totalAmount = Math.max(0, effectiveMonthlyFee + admissionFeeAmount + lateFee);
 
   return {
     baseAmount,
     admissionFeeAmount,
-    discountType,
-    discountValue,
     discountAmount,
-    lateFeeAmount,
-    netFeeAmount,
+    lateFeeAmount: lateFee,
     totalAmount,
+    effectiveMonthlyFee,
+    netFeeAmount: effectiveMonthlyFee,
   };
 }
 
-/**
- * Convenient alias for resolvePricing matching the test fixture signatures.
- */
-export function resolvePricing(
-  student: {
-    feeMode: FeeMode | 'DEFAULT' | 'CUSTOM';
-    customMonthlyFee?: number | null;
-    discountType?: DiscountType | 'NONE' | 'FIXED' | 'PERCENTAGE';
-    discountValue?: number;
-    admissionFee?: number;
-  },
-  cls: {
-    defaultMonthlyFee: number;
-    lateFeeEnabled?: boolean;
-    lateFeeType?: LateFeeType | 'FIXED' | 'PER_DAY';
-    lateFeeAmount?: number;
-    graceDays?: number;
-  },
-  isFirstCycle = false
-): PricingBreakdown {
-  return calculateFeeBreakdown({
-    feeMode: student.feeMode,
-    classDefaultFee: cls.defaultMonthlyFee,
-    customMonthlyFee: student.customMonthlyFee,
-    discountType: student.discountType,
-    discountValue: student.discountValue,
-    admissionFee: student.admissionFee,
-    isFirstCycle,
-    lateFeeEnabled: cls.lateFeeEnabled,
-    lateFeeType: cls.lateFeeType,
-    lateFeeAmount: cls.lateFeeAmount,
-    graceDays: cls.graceDays,
-  });
-}
-
-/**
- * Derives the fee status dynamically based on paid amount, total amount, due date, and evaluation date.
- */
 export function deriveFeeStatus(
   feeRecord: {
     paidAmount: number;
     totalAmount: number;
-    dueDate: Date | string;
+    dueDate?: Date | string;
     status?: FeeStatus | string;
   },
   currentDate: Date | string = new Date(),
   graceDays: number = 0
 ): FeeStatus {
-  // Manual override states are immutable
   if (feeRecord.status === 'WAIVED' || feeRecord.status === 'CANCELLED') {
     return feeRecord.status as FeeStatus;
   }
 
-  // Full payment condition
   if (feeRecord.totalAmount === 0 || feeRecord.paidAmount >= feeRecord.totalAmount) {
     return 'PAID';
   }
 
-  // Partial payment condition
   if (feeRecord.paidAmount > 0 && feeRecord.paidAmount < feeRecord.totalAmount) {
     return 'PARTIALLY_PAID';
   }
 
-  // Zero paid conditions
+  if (!feeRecord.dueDate) {
+    return 'UPCOMING';
+  }
+
   const now = startOfDay(currentDate);
   const due = startOfDay(feeRecord.dueDate);
 
@@ -354,40 +329,75 @@ export function deriveFeeStatus(
 }
 
 /**
- * Concurrency-safe generator for sequential student code in format DPR-{YEAR}-{SEQ}
- * (e.g. DPR-2026-001)
+ * Concurrency-safe generator for sequential student code in tenant format with numerical sorting.
  */
 export async function generateStudentCode(
   prismaClient: PrismaClient | any = prisma,
-  admissionYear: number = new Date().getFullYear()
+  organizationIdOrYear?: string | number,
+  maybeYear?: number
 ): Promise<string> {
-  const prefix = `DPR-${admissionYear}-`;
+  let organizationId: string | undefined;
+  let admissionYear = new Date().getFullYear();
 
-  const latestStudent = await prismaClient.student.findFirst({
-    where: {
-      studentCode: {
-        startsWith: prefix,
+  if (typeof organizationIdOrYear === 'string') {
+    organizationId = organizationIdOrYear;
+    if (typeof maybeYear === 'number') admissionYear = maybeYear;
+  } else if (typeof organizationIdOrYear === 'number') {
+    admissionYear = organizationIdOrYear;
+  }
+
+  let prefixCode = 'STU';
+  if (organizationId && prismaClient?.organizationSetting?.findUnique) {
+    try {
+      const settings = await prismaClient.organizationSetting.findUnique({
+        where: { organizationId },
+        select: { receiptPrefix: true, feePrefix: true },
+      });
+      if (settings?.receiptPrefix) {
+        prefixCode = settings.receiptPrefix.split('-')[0] || 'STU';
+      }
+    } catch {}
+  }
+
+  const where: any = {};
+  if (organizationId) where.organizationId = organizationId;
+
+  // Retrieve existing students to find maximum sequential number numerically
+  let students: Array<{ studentCode: string }> = [];
+  if (typeof prismaClient?.student?.findMany === 'function') {
+    students = (await prismaClient.student.findMany({
+      where,
+      select: {
+        studentCode: true,
       },
-    },
-    orderBy: {
-      studentCode: 'desc',
-    },
-    select: {
-      studentCode: true,
-    },
-  });
+    })) || [];
+  } else if (typeof prismaClient?.student?.findFirst === 'function') {
+    const first = await prismaClient.student.findFirst({
+      where,
+      select: {
+        studentCode: true,
+      },
+    });
+    if (first) students = [first];
+  }
 
   let maxSeq = 0;
-  if (latestStudent && latestStudent.studentCode) {
-    const parts = latestStudent.studentCode.split('-');
-    const seq = parseInt(parts[2] || '0', 10);
-    if (!isNaN(seq)) {
-      maxSeq = seq;
+  for (const s of students) {
+    if (!s.studentCode) continue;
+    const parts = s.studentCode.split('-');
+    if (parts.length === 3) {
+      if (prefixCode === 'STU' && parts[0]) {
+        prefixCode = parts[0];
+      }
+      const seq = parseInt(parts[2], 10);
+      if (!isNaN(seq) && seq > maxSeq) {
+        maxSeq = seq;
+      }
     }
   }
 
   const nextSeq = maxSeq + 1;
-  return `DPR-${admissionYear}-${String(nextSeq).padStart(3, '0')}`;
+  return `${prefixCode}-${admissionYear}-${String(nextSeq).padStart(3, '0')}`;
 }
 
 /**
@@ -396,16 +406,51 @@ export async function generateStudentCode(
 export async function generateStudentBillingRecords(
   prismaClient: PrismaClient | any = prisma,
   studentId: string,
-  options: GenerateStudentBillingOptions = {}
+  organizationIdOrOptions?: string | GenerateStudentBillingOptions,
+  maybeOptions?: GenerateStudentBillingOptions
 ): Promise<GenerateStudentBillingResult> {
-  const student = await prismaClient.student.findUnique({
-    where: { id: studentId },
-    include: { class: true },
-  });
+  let organizationId: string | undefined;
+  let options: GenerateStudentBillingOptions = {};
+
+  if (typeof organizationIdOrOptions === 'string') {
+    organizationId = organizationIdOrOptions;
+    if (maybeOptions) options = maybeOptions;
+  } else if (typeof organizationIdOrOptions === 'object' && organizationIdOrOptions !== null) {
+    options = organizationIdOrOptions;
+  } else if (maybeOptions && typeof maybeOptions === 'object') {
+    options = maybeOptions;
+  }
+
+  const where: any = { id: studentId };
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
+
+  let student: any = null;
+  if (typeof prismaClient?.student?.findUnique === 'function') {
+    try {
+      student = await prismaClient.student.findUnique({
+        where: { id: studentId },
+        include: { class: true },
+      });
+    } catch {}
+  }
+  if (!student && typeof prismaClient?.student?.findFirst === 'function') {
+    student = await prismaClient.student.findFirst({
+      where,
+      include: { class: true },
+    });
+  }
 
   if (!student) {
     throw new Error(`Student ${studentId} not found`);
   }
+
+  if (!student.class) {
+    throw new Error(`Class record not found for student ${studentId}`);
+  }
+
+  const orgId = organizationId || student.organizationId || DEFAULT_ORG_ID;
 
   if (student.status !== StudentStatus.ACTIVE && student.status !== 'ACTIVE') {
     throw new Error(`Cannot generate fee record for inactive student ${studentId} (status: ${student.status})`);
@@ -415,6 +460,12 @@ export async function generateStudentBillingRecords(
   const evalDate = options.currentDate ? new Date(options.currentDate) : new Date();
   const cycles = getBillingCyclesUpToDate(student.admissionDate, targetDate);
 
+  const classDefaultFee = student.class.defaultMonthlyFee ?? 0;
+  const lateFeeEnabled = student.class.lateFeeEnabled ?? false;
+  const lateFeeType = student.class.lateFeeType ?? 'FIXED';
+  const lateFeeAmount = student.class.lateFeeAmount ?? 0;
+  const graceDays = student.class.graceDays ?? 0;
+
   let created = 0;
   let skipped = 0;
   const recordIds: string[] = [];
@@ -422,9 +473,9 @@ export async function generateStudentBillingRecords(
   for (let k = 0; k < cycles.length; k++) {
     const cycle = cycles[k];
 
-    // Check if record already exists for this exact cycle
     const existing = await prismaClient.feeRecord.findFirst({
       where: {
+        organizationId: orgId,
         studentId: student.id,
         billingPeriodStart: cycle.periodStart,
         billingPeriodEnd: cycle.periodEnd,
@@ -439,19 +490,18 @@ export async function generateStudentBillingRecords(
 
     const pricing = calculateFeeBreakdown({
       feeMode: student.feeMode,
-      classDefaultFee: student.class.defaultMonthlyFee,
+      classDefaultFee,
       customMonthlyFee: student.customMonthlyFee,
       discountType: student.discountType,
       discountValue: student.discountValue,
       admissionFee: student.admissionFee,
       isFirstCycle: k === 0,
-      lateFeeEnabled: student.class.lateFeeEnabled,
-      lateFeeType: student.class.lateFeeType,
-      lateFeeAmount: student.class.lateFeeAmount,
-      graceDays: student.class.graceDays,
+      lateFeeEnabled,
+      lateFeeType,
+      lateFeeAmount,
+      graceDays,
       dueDate: cycle.dueDate,
       currentDate: evalDate,
-      paidAmount: 0,
     });
 
     const status = deriveFeeStatus(
@@ -459,15 +509,15 @@ export async function generateStudentBillingRecords(
         paidAmount: 0,
         totalAmount: pricing.totalAmount,
         dueDate: cycle.dueDate,
-        status: 'UPCOMING',
       },
       evalDate,
-      student.class.graceDays
+      graceDays
     );
 
     try {
       const newRecord = await prismaClient.feeRecord.create({
         data: {
+          organizationId: orgId,
           studentId: student.id,
           classId: student.classId,
           billingPeriodStart: cycle.periodStart,
@@ -489,7 +539,6 @@ export async function generateStudentBillingRecords(
       created++;
       recordIds.push(newRecord.id);
     } catch (err: any) {
-      // Safe skip if compound unique constraint is hit in race condition
       if (err?.code === 'P2002' || err?.message?.includes('Unique constraint')) {
         skipped++;
       } else {
@@ -508,15 +557,30 @@ export async function generateStudentBillingRecords(
 }
 
 /**
- * Batch generator that scans all ACTIVE students and generates missing fee cycles up to target date.
+ * Batch generator that scans all ACTIVE students in an organization and generates missing fee cycles.
  */
 export async function generateBatchBillingRecords(
   prismaClient: PrismaClient | any = prisma,
-  options: GenerateBatchBillingOptions = {}
+  organizationIdOrOptions?: string | GenerateBatchBillingOptions,
+  maybeOptions?: GenerateBatchBillingOptions
 ): Promise<GenerateBatchBillingResult> {
+  let organizationId: string | undefined;
+  let options: GenerateBatchBillingOptions = {};
+
+  if (typeof organizationIdOrOptions === 'string') {
+    organizationId = organizationIdOrOptions;
+    if (maybeOptions) options = maybeOptions;
+  } else if (typeof organizationIdOrOptions === 'object' && organizationIdOrOptions !== null) {
+    options = organizationIdOrOptions;
+  }
+
   const whereClause: any = {
     status: StudentStatus.ACTIVE,
   };
+
+  if (organizationId) {
+    whereClause.organizationId = organizationId;
+  }
 
   if (options.classId) {
     whereClause.classId = options.classId;
@@ -534,7 +598,7 @@ export async function generateBatchBillingRecords(
 
   for (const student of activeStudents) {
     try {
-      const result = await generateStudentBillingRecords(prismaClient, student.id, {
+      const result = await generateStudentBillingRecords(prismaClient, student.id, student.organizationId || organizationId, {
         throughDate: options.throughDate,
         currentDate: options.currentDate,
       });

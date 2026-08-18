@@ -9,6 +9,61 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// -------------------------------------------------------------
+// ENUMS
+// -------------------------------------------------------------
+
+enum OrganizationType {
+  PRIVATE_TUITION
+  SCHOOL
+  COACHING
+  TUTORIAL
+  EDUCATIONAL_INSTITUTE
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  EXPIRED
+  CANCELLED
+}
+
+enum MemberRole {
+  SUPER_ADMIN
+  ORGANIZATION_ADMIN
+  ACCOUNTANT
+  TEACHER
+  STAFF
+}
+
+enum MemberStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED
+}
+
+enum SubscriptionPlan {
+  BASIC
+  STANDARD
+  PREMIUM
+  CUSTOM
+}
+
+enum SubscriptionCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  EXPIRED
+  CANCELLED
+}
+
 enum FeeMode {
   DEFAULT
   CUSTOM
@@ -85,25 +140,175 @@ enum UpiSubmissionStatus {
   REJECTED
 }
 
-model User {
-  id           String     @id @default(uuid())
-  email        String     @unique
-  passwordHash String     @map("password_hash")
-  name         String
-  role         String     @default("ADMIN")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+// -------------------------------------------------------------
+// USER & MULTI-TENANT MEMBERSHIP
+// -------------------------------------------------------------
 
-  payments     Payment[]
-  expenses     Expense[]
-  auditLogs    AuditLog[]
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  mobile       String?
+  isSuperAdmin Boolean  @default(false) @map("is_super_admin")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships      OrganizationMember[]
+  totpSecret       TotpSecret?
+  recordedPayments Payment[]
+  recordedExpenses Expense[]
+  auditLogs        AuditLog[]
 
   @@map("users")
 }
 
+model Organization {
+  id               String             @id @default(uuid())
+  publicId         String             @unique @default(uuid()) @map("public_id")
+  name             String
+  slug             String             @unique
+  organizationType OrganizationType   @default(PRIVATE_TUITION) @map("organization_type")
+  status           OrganizationStatus @default(ACTIVE)
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  members          OrganizationMember[]
+  settings         OrganizationSetting?
+  subscriptions    Subscription[]
+  classes          Class[]
+  students         Student[]
+  feeRecords       FeeRecord[]
+  payments         Payment[]
+  documents        Document[]
+  expenses         Expense[]
+  upiSubmissions   UpiSubmission[]
+  auditLogs        AuditLog[]
+
+  @@index([status])
+  @@index([organizationType])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String       @id @default(uuid())
+  userId         String       @map("user_id")
+  organizationId String       @map("organization_id")
+  role           MemberRole   @default(ORGANIZATION_ADMIN)
+  status         MemberStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([role])
+  @@map("organization_members")
+}
+
+model OrganizationSetting {
+  id               String   @id @default(uuid())
+  organizationId   String   @unique @map("organization_id")
+  instituteName    String   @map("institute_name")
+  tagline          String?
+  address          String?
+  phone            String?
+  whatsapp         String?
+  email            String?
+  logoUrl          String?  @map("logo_url")
+  receiptPrefix    String   @default("RC") @map("receipt_prefix")
+  feePrefix        String   @default("FEE") @map("fee_prefix")
+  currencySymbol   String   @default("₹") @map("currency_symbol")
+  defaultGraceDays Int      @default(0) @map("default_grace_days")
+  upiId            String?  @map("upi_id")
+  upiPayeeName     String?  @map("upi_payee_name")
+  upiEnabled       Boolean  @default(true) @map("upi_enabled")
+  customQrUrl      String?  @map("custom_qr_url")
+  reminderMessage  String?  @map("reminder_message")
+  receiptMessage   String?  @map("receipt_message")
+  footerText       String?  @map("footer_text")
+  signatureUrl     String?  @map("signature_url")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_settings")
+}
+
+// -------------------------------------------------------------
+// SUBSCRIPTIONS & PLATFORM BILLING
+// -------------------------------------------------------------
+
+model Subscription {
+  id              String             @id @default(uuid())
+  organizationId  String             @map("organization_id")
+  plan            SubscriptionPlan   @default(BASIC)
+  pricePerCycle   Float              @default(0) @map("price_per_cycle")
+  billingCycle    SubscriptionCycle  @default(MONTHLY) @map("billing_cycle")
+  startDate       DateTime           @default(now()) @map("start_date")
+  expiryDate      DateTime           @map("expiry_date")
+  status          SubscriptionStatus @default(ACTIVE)
+  notes           String?
+  createdByUserId String?            @map("created_by_user_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments     SubscriptionPayment[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model SubscriptionPayment {
+  id               String        @id @default(uuid())
+  subscriptionId   String        @map("subscription_id")
+  amount           Float
+  paymentDate      DateTime      @default(now()) @map("payment_date")
+  paymentMethod    PaymentMethod @default(UPI) @map("payment_method")
+  referenceNumber  String?       @map("reference_number")
+  notes            String?
+  recordedByUserId String?       @map("recorded_by_user_id")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@map("subscription_payments")
+}
+
+// -------------------------------------------------------------
+// TWO-FACTOR AUTHENTICATION (TOTP)
+// -------------------------------------------------------------
+
+model TotpSecret {
+  id                     String    @id @default(uuid())
+  userId                 String    @unique @map("user_id")
+  secretEncrypted        String    @map("secret_encrypted")
+  recoveryCodesEncrypted String    @map("recovery_codes_encrypted")
+  isEnabled              Boolean   @default(false) @map("is_enabled")
+  verifiedAt             DateTime? @map("verified_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("totp_secrets")
+}
+
+// -------------------------------------------------------------
+// ORGANIZATION DATA ENTITIES
+// -------------------------------------------------------------
+
 model Class {
   id                  String      @id @default(uuid())
-  name                String      @unique
+  organizationId      String      @map("organization_id")
+  name                String
   defaultMonthlyFee   Float       @default(0) @map("default_monthly_fee")
   defaultAdmissionFee Float       @default(0) @map("default_admission_fee")
   lateFeeEnabled      Boolean     @default(false) @map("late_fee_enabled")
@@ -114,15 +319,20 @@ model Class {
   createdAt           DateTime    @default(now()) @map("created_at")
   updatedAt           DateTime    @updatedAt @map("updated_at")
 
-  students            Student[]
-  feeRecords          FeeRecord[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  students     Student[]
+  feeRecords   FeeRecord[]
 
+  @@unique([organizationId, name])
+  @@index([organizationId])
   @@map("classes")
 }
 
 model Student {
   id               String        @id @default(uuid())
-  studentCode      String        @unique @map("student_code")
+  publicId         String        @unique @default(uuid()) @map("public_id")
+  organizationId   String        @map("organization_id")
+  studentCode      String        @map("student_code")
   name             String
   fatherName       String        @map("father_name")
   motherName       String?       @map("mother_name")
@@ -145,12 +355,15 @@ model Student {
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
-  class            Class         @relation(fields: [classId], references: [id], onDelete: Restrict)
-  feeRecords       FeeRecord[]
-  payments         Payment[]
-  documents        Document[]
-  upiSubmissions   UpiSubmission[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  class          Class           @relation(fields: [classId], references: [id], onDelete: Restrict)
+  feeRecords     FeeRecord[]
+  payments       Payment[]
+  documents      Document[]
+  upiSubmissions UpiSubmission[]
 
+  @@unique([organizationId, studentCode])
+  @@index([organizationId])
   @@index([classId])
   @@index([status])
   @@index([admissionDate])
@@ -158,31 +371,34 @@ model Student {
 }
 
 model FeeRecord {
-  id                 String          @id @default(uuid())
-  studentId          String          @map("student_id")
-  classId            String          @map("class_id")
-  billingPeriodStart DateTime        @map("billing_period_start")
-  billingPeriodEnd   DateTime        @map("billing_period_end")
-  dueDate            DateTime        @map("due_date")
-  baseAmount         Float           @map("base_amount")
-  admissionFeeAmount Float           @default(0) @map("admission_fee_amount")
-  discountAmount     Float           @default(0) @map("discount_amount")
-  lateFeeAmount      Float           @default(0) @map("late_fee_amount")
-  totalAmount        Float           @map("total_amount")
-  paidAmount         Float           @default(0) @map("paid_amount")
-  outstandingAmount  Float           @map("outstanding_amount")
-  status             FeeStatus       @default(UPCOMING)
-  feeMode            FeeMode         @default(DEFAULT) @map("fee_mode")
+  id                 String    @id @default(uuid())
+  organizationId     String    @map("organization_id")
+  studentId          String    @map("student_id")
+  classId            String    @map("class_id")
+  billingPeriodStart DateTime  @map("billing_period_start")
+  billingPeriodEnd   DateTime  @map("billing_period_end")
+  dueDate            DateTime  @map("due_date")
+  baseAmount         Float     @map("base_amount")
+  admissionFeeAmount Float     @default(0) @map("admission_fee_amount")
+  discountAmount     Float     @default(0) @map("discount_amount")
+  lateFeeAmount      Float     @default(0) @map("late_fee_amount")
+  totalAmount        Float     @map("total_amount")
+  paidAmount         Float     @default(0) @map("paid_amount")
+  outstandingAmount  Float     @map("outstanding_amount")
+  status             FeeStatus @default(UPCOMING)
+  feeMode            FeeMode   @default(DEFAULT) @map("fee_mode")
   notes              String?
-  generatedAt        DateTime        @default(now()) @map("generated_at")
-  updatedAt          DateTime        @updatedAt @map("updated_at")
+  generatedAt        DateTime  @default(now()) @map("generated_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  student            Student         @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  class              Class           @relation(fields: [classId], references: [id], onDelete: Restrict)
-  payments           Payment[]
-  upiSubmissions     UpiSubmission[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  student        Student         @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  class          Class           @relation(fields: [classId], references: [id], onDelete: Restrict)
+  payments       Payment[]
+  upiSubmissions UpiSubmission[]
 
-  @@unique([studentId, billingPeriodStart, billingPeriodEnd], name: "uq_student_billing_period")
+  @@unique([organizationId, studentId, billingPeriodStart, billingPeriodEnd], name: "uq_org_student_billing_period")
+  @@index([organizationId])
   @@index([studentId])
   @@index([classId])
   @@index([status])
@@ -192,6 +408,7 @@ model FeeRecord {
 
 model UpiSubmission {
   id                String              @id @default(uuid())
+  organizationId    String              @map("organization_id")
   feeRecordId       String              @map("fee_record_id")
   studentId         String              @map("student_id")
   utrNumber         String              @map("utr_number")
@@ -203,9 +420,11 @@ model UpiSubmission {
   reviewedAt        DateTime?           @map("reviewed_at")
   reviewedByUserId  String?             @map("reviewed_by_user_id")
 
-  feeRecord         FeeRecord           @relation(fields: [feeRecordId], references: [id], onDelete: Cascade)
-  student           Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  feeRecord    FeeRecord    @relation(fields: [feeRecordId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([feeRecordId])
   @@index([studentId])
   @@index([status])
@@ -215,7 +434,9 @@ model UpiSubmission {
 
 model Payment {
   id               String        @id @default(uuid())
-  receiptNumber    String        @unique @map("receipt_number")
+  publicId         String        @unique @default(uuid()) @map("public_id")
+  organizationId   String        @map("organization_id")
+  receiptNumber    String        @map("receipt_number")
   feeRecordId      String        @map("fee_record_id")
   studentId        String        @map("student_id")
   amount           Float
@@ -226,10 +447,13 @@ model Payment {
   recordedByUserId String?       @map("recorded_by_user_id")
   createdAt        DateTime      @default(now()) @map("created_at")
 
-  feeRecord        FeeRecord     @relation(fields: [feeRecordId], references: [id], onDelete: Restrict)
-  student          Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  recordedByUser   User?         @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  feeRecord      FeeRecord    @relation(fields: [feeRecordId], references: [id], onDelete: Restrict)
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedByUser User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
+  @@unique([organizationId, receiptNumber])
+  @@index([organizationId])
   @@index([feeRecordId])
   @@index([studentId])
   @@index([paymentDate])
@@ -238,66 +462,29 @@ model Payment {
 }
 
 model Document {
-  id           String       @id @default(uuid())
-  token        String       @unique @default(uuid())
-  documentType DocumentType @map("document_type")
-  referenceId  String       @map("reference_id")
-  studentId    String?      @map("student_id")
-  metadata     Json?
-  expiresAt    DateTime?    @map("expires_at")
-  createdAt    DateTime     @default(now()) @map("created_at")
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  token          String       @unique @default(uuid())
+  documentType   DocumentType @map("document_type")
+  referenceId    String       @map("reference_id")
+  studentId      String?      @map("student_id")
+  metadata       Json?
+  expiresAt      DateTime?    @map("expires_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   student      Student?     @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([token])
   @@index([referenceId])
   @@index([studentId])
   @@map("documents")
 }
 
-model InstituteSetting {
-  id               String   @id @default(uuid())
-  instituteName    String   @default("DPR Private Tuition") @map("institute_name")
-  tagline          String?  @default("Excellence in Academic Coaching & Guidance")
-  address          String?  @default("Station Road, Near City Center, West Bengal")
-  phone            String?  @default("+91 98765 43210")
-  whatsapp         String?  @default("+91 98765 43210")
-  email            String?  @default("info@dprtuition.com")
-  logoUrl          String?  @map("logo_url")
-  receiptPrefix    String   @default("DPR-RC") @map("receipt_prefix")
-  currencySymbol   String   @default("₹") @map("currency_symbol")
-  defaultGraceDays Int      @default(0) @map("default_grace_days")
-  upiId            String?  @default("dprtuition@upi") @map("upi_id")
-  upiPayeeName     String?  @default("DPR Private Tuition") @map("upi_payee_name")
-  upiEnabled       Boolean  @default(true) @map("upi_enabled")
-  customQrUrl      String?  @map("custom_qr_url")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-
-  @@map("institute_settings")
-}
-
-model AuditLog {
-  id        String   @id @default(uuid())
-  userId    String?  @map("user_id")
-  action    String
-  entity    String
-  entityId  String?  @map("entity_id")
-  details   Json?
-  ipAddress String?  @map("ip_address")
-  timestamp DateTime @default(now())
-
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-  @@index([action])
-  @@index([entity, entityId])
-  @@index([timestamp])
-  @@map("audit_logs")
-}
-
 model Expense {
   id               String          @id @default(uuid())
+  organizationId   String          @map("organization_id")
   title            String
   category         ExpenseCategory
   amount           Float
@@ -311,11 +498,35 @@ model Expense {
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
-  recordedByUser   User?           @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recordedByUser User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([category])
   @@index([expenseDate])
   @@index([paymentMethod])
   @@index([recordedByUserId])
   @@map("expenses")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  userId         String?  @map("user_id")
+  action         String
+  entity         String
+  entityId       String?  @map("entity_id")
+  details        Json?
+  ipAddress      String?  @map("ip_address")
+  timestamp      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([entity, entityId])
+  @@index([timestamp])
+  @@map("audit_logs")
 }

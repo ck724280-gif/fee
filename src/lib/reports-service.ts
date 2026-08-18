@@ -3,6 +3,8 @@ import prisma from './prisma';
 import { formatYMD, startOfDay } from './billing-engine';
 import { buildWhatsAppUrl, generateOverdueNoticeMessage } from './whatsapp';
 
+const DEFAULT_ORG_ID = 'e0000000-0000-4000-a000-000000000001';
+
 export interface ReportFilterOptions {
   startDate?: string;
   endDate?: string;
@@ -119,15 +121,35 @@ export interface DailyCollectionRow {
   feePeriod: string;
 }
 
+function parseOrgAndFilters(
+  orgOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
+): { organizationId: string; filters: ReportFilterOptions } {
+  let organizationId = DEFAULT_ORG_ID;
+  let filters: ReportFilterOptions = {};
+
+  if (typeof orgOrFilters === 'string') {
+    organizationId = orgOrFilters;
+    if (maybeFilters) filters = maybeFilters;
+  } else if (typeof orgOrFilters === 'object' && orgOrFilters !== null) {
+    filters = orgOrFilters;
+  }
+
+  return { organizationId, filters };
+}
+
 /**
  * 1. Monthly Collection Report
  */
 export async function getMonthlyCollectionReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
-  const feeWhere: Prisma.FeeRecordWhereInput = {};
-  const payWhere: Prisma.PaymentWhereInput = {};
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
+
+  const feeWhere: Prisma.FeeRecordWhereInput = { organizationId };
+  const payWhere: Prisma.PaymentWhereInput = { organizationId };
 
   if (filters.classId) {
     feeWhere.classId = filters.classId;
@@ -155,7 +177,6 @@ export async function getMonthlyCollectionReport(
 
   const monthMap: Record<string, { billed: number; collected: number; txCount: number }> = {};
 
-  // Track billed by billingPeriodStart
   feeRecords.forEach((f: any) => {
     const d = new Date(f.billingPeriodStart);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -165,7 +186,6 @@ export async function getMonthlyCollectionReport(
     monthMap[key].billed += f.totalAmount;
   });
 
-  // Track collected by paymentDate
   payments.forEach((p: any) => {
     const d = new Date(p.paymentDate);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -229,11 +249,15 @@ export async function getMonthlyCollectionReport(
  */
 export async function getOverdueFeesReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
+
   const now = startOfDay(filters.currentDate ? new Date(filters.currentDate) : new Date());
 
   const where: Prisma.FeeRecordWhereInput = {
+    organizationId,
     status: { in: [FeeStatus.OVERDUE, FeeStatus.DUE] },
     outstandingAmount: { gt: 0 },
   };
@@ -245,51 +269,66 @@ export async function getOverdueFeesReport(
     where.studentId = filters.studentId;
   }
 
-  const [feeRecords, settings] = await Promise.all([
+  const [feeRecords, settings, org] = await Promise.all([
     prismaClient.feeRecord.findMany({
       where,
       include: {
-        student: true,
+        student: {
+          include: {
+            class: true,
+          },
+        },
         class: true,
       },
       orderBy: { dueDate: 'asc' },
     }),
-    prismaClient.instituteSetting.findFirst(),
+    typeof prismaClient?.organizationSetting?.findUnique === 'function'
+      ? prismaClient.organizationSetting.findUnique({ where: { organizationId } }).catch(() => null)
+      : null,
+    typeof prismaClient?.organization?.findUnique === 'function'
+      ? prismaClient.organization.findUnique({ where: { id: organizationId } }).catch(() => null)
+      : null,
   ]);
 
   const origin = process.env.NEXT_PUBLIC_APP_URL || '';
+  const instituteName = settings?.instituteName || org?.name || 'Education Institute';
+
+  let totalLateFees = 0;
 
   const rows: OverdueFeeRow[] = feeRecords.map((f: any) => {
-    const due = startOfDay(f.dueDate);
-    const diffTime = now.getTime() - due.getTime();
-    const overdueDays = diffTime > 0 ? Math.floor(diffTime / (1000 * 60 * 60 * 24)) : 0;
+    const dueDateObj = startOfDay(f.dueDate);
+    const diffMs = now.getTime() - dueDateObj.getTime();
+    const overdueDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 
     const startStr = formatYMD(new Date(f.billingPeriodStart));
     const endStr = formatYMD(new Date(f.billingPeriodEnd));
     const dueStr = formatYMD(new Date(f.dueDate));
 
+    totalLateFees += f.lateFeeAmount || 0;
+
     const phone = f.student.whatsappNumber || f.student.mobile;
-    const msg = generateOverdueNoticeMessage({
+    const noticeMsg = generateOverdueNoticeMessage({
       studentName: f.student.name,
-      className: f.class.name,
-      overdueAmount: f.outstandingAmount,
-      dueDateStr: dueStr,
+      className: f.student.class?.name || f.class?.name || 'Class',
+      outstandingAmount: f.outstandingAmount,
       overdueDays,
+      dueDateStr: dueStr,
       documentUrl: origin ? `${origin}/fees/${f.id}` : `/fees/${f.id}`,
-      instituteName: settings?.instituteName || 'DPR Private Tuition',
-      contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
+      instituteName,
+      contactPhone: settings?.phone || settings?.whatsapp || '',
     });
-    const whatsappUrl = phone ? buildWhatsAppUrl(phone, msg) : undefined;
+
+    const whatsappUrl = phone ? buildWhatsAppUrl(phone, noticeMsg) : undefined;
 
     return {
       feeRecordId: f.id,
-      studentId: f.student.id,
+      studentId: f.studentId,
       studentCode: f.student.studentCode,
       studentName: f.student.name,
       fatherName: f.student.fatherName,
       mobile: f.student.mobile,
       whatsappNumber: f.student.whatsappNumber,
-      className: f.class.name,
+      className: f.student.class?.name || f.class?.name || 'N/A',
       billingPeriod: `${startStr} to ${endStr}`,
       dueDate: dueStr,
       overdueDays,
@@ -304,56 +343,93 @@ export async function getOverdueFeesReport(
 
   const summary = rows.reduce(
     (acc, r) => {
+      acc.totalDefaulters += 1;
       acc.totalOverdueStudents += 1;
+      acc.totalOverdueAmount += r.outstandingAmount;
       acc.totalOutstanding += r.outstandingAmount;
-      acc.totalLateFees += r.lateFee;
+      if (r.overdueDays > acc.maxOverdueDays) {
+        acc.maxOverdueDays = r.overdueDays;
+      }
       return acc;
     },
-    { totalOverdueStudents: 0, totalOutstanding: 0, totalLateFees: 0 }
+    {
+      totalDefaulters: 0,
+      totalOverdueStudents: 0,
+      totalOverdueAmount: 0,
+      totalOutstanding: 0,
+      totalLateFees,
+      maxOverdueDays: 0,
+    }
   );
 
   return { rows, summary };
 }
 
 /**
- * 3. Class Wise Revenue Report
+ * 3. Class-Wise Revenue Summary
  */
 export async function getClassWiseRevenueReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
-  const classes = await prismaClient.class.findMany({
-    where: filters.classId ? { id: filters.classId } : {},
-    include: {
-      students: true,
-      feeRecords: true,
-    },
-    orderBy: { name: 'asc' },
-  });
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
 
-  const rows: ClassWiseRevenueRow[] = classes.map((c: any) => {
-    const totalStudents = c.students.length;
-    const activeStudents = c.students.filter((s: any) => s.status === 'ACTIVE').length;
+  const classWhere: Prisma.ClassWhereInput = { organizationId };
+  if (filters.classId) {
+    classWhere.id = filters.classId;
+  }
 
-    let totalBilled = 0;
-    let totalCollected = 0;
-    let outstandingAmount = 0;
+  const [classes, students, feeRecords] = await Promise.all([
+    prismaClient.class.findMany({
+      where: classWhere,
+      orderBy: { name: 'asc' },
+    }),
+    prismaClient.student.findMany({
+      where: { organizationId },
+      select: { id: true, classId: true, status: true },
+    }),
+    prismaClient.feeRecord.findMany({
+      where: {
+        organizationId,
+        ...(filters.classId ? { classId: filters.classId } : {}),
+        ...(filters.startDate || filters.endDate
+          ? {
+              billingPeriodStart: {
+                ...(filters.startDate ? { gte: new Date(filters.startDate) } : {}),
+                ...(filters.endDate ? { lte: new Date(filters.endDate) } : {}),
+              },
+            }
+          : {}),
+      },
+      select: {
+        classId: true,
+        totalAmount: true,
+        paidAmount: true,
+        outstandingAmount: true,
+      },
+    }),
+  ]);
 
-    c.feeRecords.forEach((f: any) => {
-      totalBilled += f.totalAmount;
-      totalCollected += f.paidAmount;
-      outstandingAmount += f.outstandingAmount;
-    });
+  const rows: ClassWiseRevenueRow[] = classes.map((cls: any) => {
+    const classStudents = students.filter((s: any) => s.classId === cls.id);
+    const activeCount = classStudents.filter((s: any) => s.status === 'ACTIVE').length;
 
+    const classFees = feeRecords.filter((f: any) => f.classId === cls.id);
+    const totalBilled = classFees.reduce((sum: number, f: any) => sum + (f.totalAmount || 0), 0);
+    const totalCollected = classFees.reduce((sum: number, f: any) => sum + (f.paidAmount || 0), 0);
+    const outstandingAmount = classFees.reduce(
+      (sum: number, f: any) => sum + (f.outstandingAmount || 0),
+      0
+    );
     const collectionRate =
       totalBilled > 0 ? Number(((totalCollected / totalBilled) * 100).toFixed(1)) : 0;
 
     return {
-      classId: c.id,
-      className: c.name,
-      totalStudents,
-      activeStudents,
-      defaultMonthlyFee: c.defaultMonthlyFee,
+      classId: cls.id,
+      className: cls.name,
+      totalStudents: classStudents.length,
+      activeStudents: activeCount,
       totalBilled,
       totalCollected,
       outstandingAmount,
@@ -361,7 +437,7 @@ export async function getClassWiseRevenueReport(
     };
   });
 
-  const summary = rows.reduce(
+  const totals = rows.reduce(
     (acc, r) => {
       acc.totalStudents += r.totalStudents;
       acc.activeStudents += r.activeStudents;
@@ -370,47 +446,46 @@ export async function getClassWiseRevenueReport(
       acc.outstandingAmount += r.outstandingAmount;
       return acc;
     },
-    {
-      totalStudents: 0,
-      activeStudents: 0,
-      totalBilled: 0,
-      totalCollected: 0,
-      outstandingAmount: 0,
-      collectionRate: 0,
-    }
+    { totalStudents: 0, activeStudents: 0, totalBilled: 0, totalCollected: 0, outstandingAmount: 0 }
   );
 
-  summary.collectionRate =
-    summary.totalBilled > 0
-      ? Number(((summary.totalCollected / summary.totalBilled) * 100).toFixed(1))
+  const overallCollectionRate =
+    totals.totalBilled > 0
+      ? Number(((totals.totalCollected / totals.totalBilled) * 100).toFixed(1))
       : 0;
 
-  return { rows, summary };
+  return {
+    rows,
+    summary: {
+      ...totals,
+      collectionRate: overallCollectionRate,
+    },
+  };
 }
 
 /**
- * 4. Payment Method Distribution Report
+ * 4. Payment Method Distribution
  */
 export async function getPaymentMethodDistributionReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
-  const where: Prisma.PaymentWhereInput = {};
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
+
+  const where: Prisma.PaymentWhereInput = { organizationId };
 
   if (filters.startDate || filters.endDate) {
     where.paymentDate = {};
     if (filters.startDate) where.paymentDate.gte = new Date(filters.startDate);
     if (filters.endDate) where.paymentDate.lte = new Date(filters.endDate);
   }
-  if (filters.classId) {
-    where.student = { classId: filters.classId };
-  }
 
   const payments = await prismaClient.payment.findMany({
     where,
     select: {
-      amount: true,
       paymentMethod: true,
+      amount: true,
     },
   });
 
@@ -419,11 +494,14 @@ export async function getPaymentMethodDistributionReport(
     UPI: { count: 0, total: 0 },
     BANK_TRANSFER: { count: 0, total: 0 },
     CARD: { count: 0, total: 0 },
+    CHEQUE: { count: 0, total: 0 },
     OTHER: { count: 0, total: 0 },
   };
 
   let grandTotal = 0;
-  let grandCount = 0;
+  let totalTransactions = 0;
+  let cashTotal = 0;
+  let digitalTotal = 0;
 
   payments.forEach((p: any) => {
     const m = p.paymentMethod || 'OTHER';
@@ -433,72 +511,104 @@ export async function getPaymentMethodDistributionReport(
     methodMap[m].count += 1;
     methodMap[m].total += p.amount;
     grandTotal += p.amount;
-    grandCount += 1;
+    totalTransactions += 1;
+
+    if (m === 'CASH') {
+      cashTotal += p.amount;
+    } else {
+      digitalTotal += p.amount;
+    }
   });
 
-  const labelMap: Record<string, string> = {
-    CASH: 'Cash Payment',
-    UPI: 'UPI (GPay / PhonePe / Paytm)',
-    BANK_TRANSFER: 'Bank Transfer (NEFT / IMPS)',
+  const methodLabels: Record<string, string> = {
+    CASH: 'Cash Payments',
+    UPI: 'UPI / QR Code',
+    BANK_TRANSFER: 'Bank Transfer / NEFT / IMPS',
     CARD: 'Credit / Debit Card',
-    OTHER: 'Other Payment Method',
+    CHEQUE: 'Cheque Payment',
+    OTHER: 'Other / Custom Methods',
   };
 
-  const rows: PaymentMethodRow[] = Object.keys(methodMap).map((key) => {
-    const item = methodMap[key];
-    const percentageShare =
-      grandTotal > 0 ? Number(((item.total / grandTotal) * 100).toFixed(1)) : 0;
-    const averageTransaction = item.count > 0 ? Math.round(item.total / item.count) : 0;
+  const rows: PaymentMethodRow[] = Object.entries(methodMap)
+    .filter(([_, data]) => data.count > 0)
+    .map(([method, data]) => {
+      const share = grandTotal > 0 ? Number(((data.total / grandTotal) * 100).toFixed(1)) : 0;
+      const avg = data.count > 0 ? Math.round(data.total / data.count) : 0;
+      return {
+        paymentMethod: method,
+        methodLabel: methodLabels[method] || method,
+        transactionCount: data.count,
+        totalAmount: data.total,
+        percentageShare: share,
+        averageTransaction: avg,
+      };
+    });
 
-    return {
-      paymentMethod: key,
-      methodLabel: labelMap[key] || key,
-      transactionCount: item.count,
-      totalAmount: item.total,
-      percentageShare,
-      averageTransaction,
-    };
-  });
+  const cashShare = grandTotal > 0 ? Number(((cashTotal / grandTotal) * 100).toFixed(1)) : 0;
+  const digitalShare = grandTotal > 0 ? Number(((digitalTotal / grandTotal) * 100).toFixed(1)) : 0;
 
   return {
     rows,
     summary: {
+      totalTransactions,
+      transactionCount: totalTransactions,
+      grandTotal,
       totalAmount: grandTotal,
-      transactionCount: grandCount,
-      cashShare: rows.find((r) => r.paymentMethod === 'CASH')?.totalAmount || 0,
-      digitalShare: grandTotal - (rows.find((r) => r.paymentMethod === 'CASH')?.totalAmount || 0),
+      cashShare: cashTotal,
+      digitalShare: digitalTotal,
+      cashTotal,
+      digitalTotal,
+      cashPercentage: cashShare,
+      digitalPercentage: digitalShare,
     },
   };
 }
 
 /**
- * 5. Student Statement / Ledger Report
+ * 5. Student Ledger Statement Report
  */
 export async function getStudentStatementReport(
   prismaClient: PrismaClient | any = prisma,
   studentId: string,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
-  if (!studentId) {
-    throw new Error('Student ID is required for Student Statement report');
-  }
+  const { organizationId } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
 
-  const student = await prismaClient.student.findUnique({
-    where: { id: studentId },
-    include: { class: true },
-  });
+  let student: any = null;
+  if (typeof prismaClient?.student?.findUnique === 'function') {
+    try {
+      student = await prismaClient.student.findUnique({
+        where: { id: studentId },
+        include: { class: true },
+      });
+    } catch {}
+  }
+  if (!student && typeof prismaClient?.student?.findFirst === 'function') {
+    try {
+      student = await prismaClient.student.findFirst({
+        where: {
+          id: studentId,
+          ...(organizationId ? { organizationId } : {}),
+        },
+        include: { class: true },
+      });
+    } catch {}
+  }
 
   if (!student) {
     throw new Error(`Student ${studentId} not found`);
   }
 
+  const orgId = organizationId || student.organizationId || DEFAULT_ORG_ID;
+
   const [feeRecords, payments] = await Promise.all([
     prismaClient.feeRecord.findMany({
-      where: { studentId },
+      where: { studentId: student.id, organizationId: orgId },
       orderBy: { billingPeriodStart: 'asc' },
     }),
     prismaClient.payment.findMany({
-      where: { studentId },
+      where: { studentId: student.id, organizationId: orgId },
       orderBy: { paymentDate: 'asc' },
     }),
   ]);
@@ -525,7 +635,7 @@ export async function getStudentStatementReport(
       date: new Date(f.billingPeriodStart),
       type: 'FEE_INVOICE',
       referenceNumber: `Cycle ${idx + 1}`,
-      description: `Tuition Fee (${startStr} to ${endStr})`,
+      description: `Fee Cycle (${startStr} to ${endStr})`,
       debit: f.totalAmount,
       credit: 0,
       status: f.status,
@@ -546,7 +656,6 @@ export async function getStudentStatementReport(
     });
   });
 
-  // Sort chronologically by date
   events.sort((a, b) => a.date.getTime() - b.date.getTime());
 
   let runningBalance = 0;
@@ -593,9 +702,12 @@ export async function getStudentStatementReport(
  */
 export async function getAdmissionsReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
-  const where: Prisma.StudentWhereInput = {};
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
+
+  const where: Prisma.StudentWhereInput = { organizationId };
   if (filters.classId) where.classId = filters.classId;
   if (filters.status) where.status = filters.status as any;
 
@@ -657,9 +769,13 @@ export async function getAdmissionsReport(
  */
 export async function getDiscountReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
+
   const where: Prisma.StudentWhereInput = {
+    organizationId,
     discountType: { not: 'NONE' },
   };
   if (filters.classId) where.classId = filters.classId;
@@ -718,9 +834,12 @@ export async function getDiscountReport(
  */
 export async function getDailyCollectionReport(
   prismaClient: PrismaClient | any = prisma,
-  filters: ReportFilterOptions = {}
+  organizationIdOrFilters?: string | ReportFilterOptions,
+  maybeFilters?: ReportFilterOptions
 ) {
-  const where: Prisma.PaymentWhereInput = {};
+  const { organizationId, filters } = parseOrgAndFilters(organizationIdOrFilters, maybeFilters);
+
+  const where: Prisma.PaymentWhereInput = { organizationId };
 
   if (filters.startDate || filters.endDate) {
     where.paymentDate = {};

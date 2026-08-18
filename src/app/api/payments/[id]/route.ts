@@ -1,42 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPaymentById } from '@/lib/payment-service';
+import prisma from '@/lib/prisma';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(request);
     const { id } = await params;
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: 'Payment ID is required' },
-        { status: 400 }
-      );
-    }
 
-    const payment = await getPaymentById(id);
+    const payment = await prisma.payment.findFirst({
+      where: {
+        OR: [{ id }, { publicId: id }, { receiptNumber: id }],
+        organizationId: auth.organizationId,
+      },
+      include: {
+        student: {
+          include: { class: true },
+        },
+        feeRecord: {
+          include: { class: true },
+        },
+        recordedByUser: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
     if (!payment) {
       return NextResponse.json(
-        { success: false, error: 'Payment not found' },
+        { success: false, error: 'Payment record not found in your organization' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        payment,
+    // Check for document token
+    const doc = await prisma.document.findFirst({
+      where: {
+        referenceId: payment.id,
+        organizationId: auth.organizationId,
+        documentType: 'RECEIPT',
       },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error('Error fetching payment:', err);
-    return NextResponse.json(
-      {
-        success: false,
-        error: err?.message || 'Failed to fetch payment',
+    });
+
+    return NextResponse.json({
+      success: true,
+      payment: {
+        ...payment,
+        documentToken: doc?.token || null,
+        documentUrl: doc ? `/api/documents/${doc.token}` : null,
       },
-      { status: 500 }
-    );
+    });
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

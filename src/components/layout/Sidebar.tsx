@@ -17,6 +17,7 @@ import {
   LogOut,
   Sparkles,
   Camera,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const navigationItems = [
@@ -30,44 +31,41 @@ export const navigationItems = [
   { name: 'Settings', href: '/settings', icon: Settings, accentColor: 'text-slate-400', badgeColor: 'bg-slate-500' },
 ];
 
+import { useBranding } from '@/components/DynamicBrandingProvider';
+
 export function Sidebar() {
   const pathname = usePathname();
-  const [instituteName, setInstituteName] = useState('DPR Tuition');
-  const [tagline, setTagline] = useState('Enterprise Financial Hub');
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const { branding } = useBranding();
+  const [user, setUser] = useState<{
+    name: string;
+    email: string;
+    isSuperAdmin: boolean;
+    role: string;
+  } | null>(null);
+
+  const instituteName = branding.instituteName || 'Education Workspace';
+  const tagline = branding.tagline || 'Multi-Tenant SaaS';
+  const logoUrl = branding.logoUrl;
 
   useEffect(() => {
-    const fetchSettings = async () => {
+    const fetchMe = async () => {
       try {
-        const res = await fetch('/api/settings');
-        const json = await res.json();
-        if (json.success && json.data) {
-          if (json.data.instituteName) setInstituteName(json.data.instituteName);
-          if (json.data.tagline) setTagline(json.data.tagline);
-          setLogoUrl(json.data.logoUrl || null);
+        const meRes = await fetch('/api/auth/me');
+        const meJson = await meRes.json();
+        if (meJson.authenticated && meJson.user) {
+          setUser({
+            name: meJson.user.name || 'Admin',
+            email: meJson.user.email,
+            isSuperAdmin: !!meJson.user.isSuperAdmin,
+            role: meJson.user.role || 'MEMBER',
+          });
         }
       } catch (e) {
-        // Fallback to defaults
+        // Fallback
       }
     };
 
-    fetchSettings();
-
-    const handleSettingsUpdate = (e: any) => {
-      const data = e.detail;
-      if (data) {
-        if (data.instituteName) setInstituteName(data.instituteName);
-        if (data.tagline) setTagline(data.tagline);
-        setLogoUrl(data.logoUrl || null);
-      } else {
-        fetchSettings();
-      }
-    };
-
-    window.addEventListener('institute-settings-updated', handleSettingsUpdate);
-    return () => {
-      window.removeEventListener('institute-settings-updated', handleSettingsUpdate);
-    };
+    fetchMe();
   }, []);
 
   return (
@@ -89,6 +87,7 @@ export function Sidebar() {
             className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/30 flex items-center justify-center cursor-pointer shrink-0 relative overflow-hidden ring-1 ring-white/20"
           >
             {logoUrl && logoUrl.trim().length > 0 ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={logoUrl}
                 alt="Institute Logo"
@@ -163,12 +162,30 @@ export function Sidebar() {
                 {isActive ? (
                   <span className="ml-auto w-2 h-2 rounded-full bg-white shadow-md shadow-white/80" />
                 ) : (
-                  <span className={cn('ml-auto w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity', item.badgeColor)} />
+                  <span
+                    className={cn(
+                      'ml-auto w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity',
+                      item.badgeColor
+                    )}
+                  />
                 )}
               </Link>
             </motion.div>
           );
         })}
+
+        {/* Super Admin Panel Link if user is Platform Super Admin */}
+        {user?.isSuperAdmin && (
+          <div className="pt-3">
+            <Link
+              href="/super-admin"
+              className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition duration-200"
+            >
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="truncate">Super Admin Platform</span>
+            </Link>
+          </div>
+        )}
       </nav>
 
       {/* Admin User Footer with Glassmorphic Card */}
@@ -176,16 +193,17 @@ export function Sidebar() {
         <div className="p-2.5 rounded-2xl bg-gradient-to-r from-slate-900/90 to-slate-950/90 border border-slate-800/80 flex items-center justify-between shadow-inner">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-md shadow-cyan-500/20 ring-2 ring-cyan-400/30">
-              AD
+              {user?.name?.charAt(0) || 'A'}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-white truncate">DPR Admin</span>
-              <span className="text-[10px] text-slate-400 truncate">admin@dprtuition.com</span>
+              <span className="text-xs font-bold text-white truncate">{user?.name || 'Administrator'}</span>
+              <span className="text-[10px] text-slate-400 truncate">{user?.email || 'admin@tuition.com'}</span>
             </div>
           </div>
           <button
-            onClick={() => {
-              window.location.href = '/api/auth/logout';
+            onClick={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' });
+              window.location.href = '/login';
             }}
             className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer"
             title="Sign Out"

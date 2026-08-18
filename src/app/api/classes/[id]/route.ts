@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { updateClassSchema } from '@/lib/validations/class';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(req);
     const { id } = await params;
-    const cls = await prisma.class.findUnique({
-      where: { id },
+
+    const cls = await prisma.class.findFirst({
+      where: { id, organizationId: auth.organizationId },
       include: {
         students: {
           select: {
             id: true,
+            publicId: true,
             studentCode: true,
             name: true,
             feeMode: true,
@@ -33,7 +37,7 @@ export async function GET(
 
     if (!cls) {
       return NextResponse.json(
-        { success: false, error: 'Class not found' },
+        { success: false, error: 'Class not found in your organization' },
         { status: 404 }
       );
     }
@@ -42,11 +46,8 @@ export async function GET(
       success: true,
       data: cls,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch class' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
@@ -55,25 +56,33 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(req, { allowedRoles: ['ORGANIZATION_ADMIN', 'SUPER_ADMIN'] });
     const { id } = await params;
     const body = await req.json();
     const validatedData = updateClassSchema.parse(body);
 
-    const existing = await prisma.class.findUnique({ where: { id } });
+    const existing = await prisma.class.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: 'Class not found' },
+        { success: false, error: 'Class not found in your organization' },
         { status: 404 }
       );
     }
 
     if (validatedData.name && validatedData.name !== existing.name) {
-      const nameConflict = await prisma.class.findUnique({
-        where: { name: validatedData.name },
+      const nameConflict = await prisma.class.findFirst({
+        where: {
+          name: validatedData.name,
+          organizationId: auth.organizationId,
+          id: { not: id },
+        },
       });
       if (nameConflict) {
         return NextResponse.json(
-          { success: false, error: `Class name "${validatedData.name}" already in use` },
+          { success: false, error: `Class name "${validatedData.name}" is already in use in your organization` },
           { status: 409 }
         );
       }
@@ -86,6 +95,8 @@ export async function PUT(
 
     await prisma.auditLog.create({
       data: {
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'CLASS_UPDATED',
         entity: 'CLASS',
         entityId: id,
@@ -98,32 +109,34 @@ export async function PUT(
       message: 'Class updated successfully',
       data: updated,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to update class' },
-      { status: 400 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(req, { allowedRoles: ['ORGANIZATION_ADMIN', 'SUPER_ADMIN'] });
     const { id } = await params;
-    const existing = await prisma.class.findUnique({
-      where: { id },
+
+    const existing = await prisma.class.findFirst({
+      where: { id, organizationId: auth.organizationId },
       include: {
         _count: {
-          select: { students: true },
+          select: {
+            students: true,
+            feeRecords: true,
+          },
         },
       },
     });
 
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: 'Class not found' },
+        { success: false, error: 'Class not found in your organization' },
         { status: 404 }
       );
     }
@@ -132,7 +145,7 @@ export async function DELETE(
       return NextResponse.json(
         {
           success: false,
-          error: `Cannot delete class with ${existing._count.students} assigned students. Please reassign students or archive the class (set status to INACTIVE).`,
+          error: `Cannot delete class "${existing.name}" because it contains ${existing._count.students} active student(s). Reassign students first.`,
         },
         { status: 400 }
       );
@@ -142,6 +155,8 @@ export async function DELETE(
 
     await prisma.auditLog.create({
       data: {
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'CLASS_DELETED',
         entity: 'CLASS',
         entityId: id,
@@ -151,12 +166,9 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: 'Class deleted successfully',
+      message: `Class "${existing.name}" deleted successfully`,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete class' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

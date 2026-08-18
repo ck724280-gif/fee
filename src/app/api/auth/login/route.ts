@@ -1,121 +1,194 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { comparePassword, signToken, COOKIE_NAME, COOKIE_OPTIONS } from '@/lib/auth';
-import { createAuditLog } from '@/lib/audit';
-import { z } from 'zod';
+import { comparePassword, createSession, signPre2faToken, COOKIE_NAME, PRE_2FA_COOKIE_NAME, PRE_2FA_COOKIE_OPTIONS } from '@/lib/auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
-const loginSchema = z.object({
-  email: z.string().trim().email('Please enter a valid email address'),
-  password: z.string().min(1, 'Password is required'),
-});
-
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const parsed = loginSchema.safeParse(body);
+    const ip = getClientIp(request);
+    const rateLimit = checkRateLimit({
+      key: `login:${ip}`,
+      limit: 7,
+      windowSeconds: 900, // 15 minutes
+    });
 
-    if (!parsed.success) {
+    if (!rateLimit.success) {
       return NextResponse.json(
         {
-          success: false,
-          error: 'Validation failed',
-          details: parsed.error.flatten(),
+          error: 'Too many login attempts. Please wait 15 minutes before trying again.',
+          code: 'RATE_LIMITED',
         },
+        { status: 429 }
+      );
+    }
+
+    const body = await request.json();
+    const { email, password } = body;
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'Email and password are required' },
         { status: 400 }
       );
     }
 
-    const { email, password } = parsed.data;
-    const normalizedEmail = email.toLowerCase();
+    const sanitizedEmail = String(email).trim().toLowerCase();
 
-    // Query user by normalized email
+    // 1. Find user in database with active memberships
     const user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
+      where: { email: sanitizedEmail },
+      include: {
+        memberships: {
+          include: {
+            organization: true,
+          },
+        },
+        totpSecret: true,
+      },
     });
 
-    const clientIp =
-      req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      req.headers.get('x-real-ip') ||
-      '127.0.0.1';
-
     if (!user) {
-      await createAuditLog({
-        userId: null,
-        action: 'LOGIN_FAILED',
-        entity: 'USER',
-        details: { email: normalizedEmail, reason: 'User not found' },
-        ipAddress: clientIp,
-      });
       return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
+        { error: 'Invalid email or password' },
         { status: 401 }
       );
     }
 
-    // Verify password against stored bcrypt hash
+    // 2. Compare password hash
     const isPasswordValid = await comparePassword(password, user.passwordHash);
     if (!isPasswordValid) {
-      await createAuditLog({
-        userId: user.id,
-        action: 'LOGIN_FAILED',
-        entity: 'USER',
-        entityId: user.id,
-        details: { email: normalizedEmail, reason: 'Invalid password' },
-        ipAddress: clientIp,
-      });
+      // Record failed audit log
+      try {
+        await prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            action: 'FAILED_LOGIN',
+            entity: 'User',
+            entityId: user.id,
+            ipAddress: ip,
+            details: { reason: 'INVALID_PASSWORD' },
+          },
+        });
+      } catch {}
+
       return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
+        { error: 'Invalid email or password' },
         { status: 401 }
       );
     }
 
-    // Issue JWT token with session claims
-    const token = await signToken({
+    // 3. Check if Two-Factor Authentication (TOTP) is enabled
+    if (user.totpSecret && user.totpSecret.isEnabled) {
+      const pre2faToken = await signPre2faToken({
+        userId: user.id,
+        email: user.email,
+        isSuperAdmin: user.isSuperAdmin,
+      });
+
+      const response = NextResponse.json({
+        requires2fa: true,
+        message: 'Two-factor authentication required. Enter the 6-digit code from your authenticator app.',
+        userId: user.id,
+      });
+
+      response.cookies.set(PRE_2FA_COOKIE_NAME, pre2faToken, PRE_2FA_COOKIE_OPTIONS);
+      return response;
+    }
+
+    // 4. Select active organization membership
+    let activeMembership = user.memberships.find(
+      (m) => m.status === 'ACTIVE' && m.organization.status === 'ACTIVE'
+    );
+
+    // If Super Admin has no org membership, link to first org or allow super-admin mode
+    if (!activeMembership && user.isSuperAdmin) {
+      const firstOrg = await prisma.organization.findFirst({
+        where: { status: 'ACTIVE' },
+      });
+      if (firstOrg) {
+        activeMembership = {
+          id: 'super-admin-virtual',
+          userId: user.id,
+          organizationId: firstOrg.id,
+          role: 'SUPER_ADMIN',
+          status: 'ACTIVE',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          organization: firstOrg,
+        } as any;
+      }
+    }
+
+    if (!activeMembership && !user.isSuperAdmin) {
+      return NextResponse.json(
+        {
+          error: 'Your organization account is inactive or suspended. Please contact support.',
+          code: 'ORG_SUSPENDED',
+        },
+        { status: 403 }
+      );
+    }
+
+    const orgId = activeMembership?.organizationId || '';
+    const orgName = activeMembership?.organization.name || 'Platform';
+    const orgSlug = activeMembership?.organization.slug || '';
+    const role = user.isSuperAdmin ? 'SUPER_ADMIN' : activeMembership?.role || 'ORGANIZATION_ADMIN';
+
+    // 5. Create multi-tenant session
+    const session = await createSession({
       userId: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role,
+      organizationId: orgId,
+      organizationName: orgName,
+      organizationSlug: orgSlug,
+      isSuperAdmin: user.isSuperAdmin,
+      totpVerified: false,
     });
 
-    // Record LOGIN_SUCCESS in AuditLog
-    await createAuditLog({
-      userId: user.id,
-      action: 'LOGIN_SUCCESS',
-      entity: 'USER',
-      entityId: user.id,
-      details: {
+    // Record login audit log
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          organizationId: orgId || null,
+          action: 'LOGIN_SUCCESS',
+          entity: 'User',
+          entityId: user.id,
+          ipAddress: ip,
+          details: { email: user.email, role },
+        },
+      });
+    } catch {}
+
+    const response = NextResponse.json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
-      },
-      ipAddress: clientIp,
-    });
-
-    const response = NextResponse.json(
-      {
-        success: true,
-        message: 'Authentication successful',
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
+        role,
+        isSuperAdmin: user.isSuperAdmin,
+        organization: {
+          id: orgId,
+          name: orgName,
+          slug: orgSlug,
         },
       },
-      { status: 200 }
-    );
+    });
 
-    // Attach httpOnly, secure cookie
-    response.cookies.set(COOKIE_NAME, token, COOKIE_OPTIONS);
+    response.cookies.set(session.cookieName, session.token, session.cookieOptions);
+    // Remove legacy cookie if present
+    response.cookies.delete('dpr_auth_token');
+    response.cookies.delete(PRE_2FA_COOKIE_NAME);
 
     return response;
   } catch (error: any) {
     console.error('Login error:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'An unexpected error occurred during authentication',
-      },
+      { error: 'An unexpected error occurred during login. Please try again.' },
       { status: 500 }
     );
   }

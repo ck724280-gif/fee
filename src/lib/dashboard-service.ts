@@ -61,6 +61,7 @@ export interface RecentPaymentItem {
 
 export async function getDashboardStats(
   prismaClient: PrismaClient | any = prisma,
+  organizationId: string,
   currentDateInput?: Date | string
 ) {
   const now = startOfDay(currentDateInput ? new Date(currentDateInput) : new Date());
@@ -69,7 +70,9 @@ export async function getDashboardStats(
   const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
 
-  // 1. Fetch KPI aggregates in parallel
+  const orgWhere = { organizationId };
+
+  // 1. Fetch KPI aggregates in parallel with strict tenant filtering
   const [
     totalStudents,
     activeStudents,
@@ -87,10 +90,11 @@ export async function getDashboardStats(
     settings,
     pendingUpiCount,
   ] = await Promise.all([
-    prismaClient.student.count(),
-    prismaClient.student.count({ where: { status: StudentStatus.ACTIVE } }),
+    prismaClient.student.count({ where: orgWhere }),
+    prismaClient.student.count({ where: { ...orgWhere, status: StudentStatus.ACTIVE } }),
     prismaClient.payment.aggregate({
       where: {
+        ...orgWhere,
         paymentDate: {
           gte: now,
           lt: nextDay,
@@ -100,6 +104,7 @@ export async function getDashboardStats(
     }),
     prismaClient.payment.aggregate({
       where: {
+        ...orgWhere,
         paymentDate: {
           gte: currentMonthStart,
           lt: nextMonthStart,
@@ -109,21 +114,24 @@ export async function getDashboardStats(
     }),
     prismaClient.feeRecord.aggregate({
       where: {
+        ...orgWhere,
         status: { in: [FeeStatus.DUE, FeeStatus.PARTIALLY_PAID] },
       },
       _sum: { outstandingAmount: true },
     }),
     prismaClient.feeRecord.aggregate({
       where: {
+        ...orgWhere,
         status: FeeStatus.OVERDUE,
       },
       _sum: { outstandingAmount: true },
     }),
     prismaClient.feeRecord.count({
-      where: { status: FeeStatus.PARTIALLY_PAID },
+      where: { ...orgWhere, status: FeeStatus.PARTIALLY_PAID },
     }),
     prismaClient.student.count({
       where: {
+        ...orgWhere,
         admissionDate: {
           gte: currentMonthStart,
           lt: nextMonthStart,
@@ -131,6 +139,7 @@ export async function getDashboardStats(
       },
     }),
     prismaClient.feeRecord.findMany({
+      where: orgWhere,
       select: {
         id: true,
         status: true,
@@ -141,6 +150,7 @@ export async function getDashboardStats(
       },
     }),
     prismaClient.class.findMany({
+      where: orgWhere,
       include: {
         students: {
           where: { status: StudentStatus.ACTIVE },
@@ -150,6 +160,7 @@ export async function getDashboardStats(
       orderBy: { name: 'asc' },
     }),
     prismaClient.payment.findMany({
+      where: orgWhere,
       take: 8,
       orderBy: { paymentDate: 'desc' },
       include: {
@@ -160,6 +171,7 @@ export async function getDashboardStats(
     }),
     prismaClient.feeRecord.findMany({
       where: {
+        ...orgWhere,
         status: FeeStatus.OVERDUE,
         outstandingAmount: { gt: 0 },
       },
@@ -171,13 +183,18 @@ export async function getDashboardStats(
       },
     }),
     prismaClient.payment.findMany({
+      where: orgWhere,
       select: {
         amount: true,
         paymentDate: true,
       },
     }),
-    prismaClient.instituteSetting.findFirst(),
-    prismaClient.upiSubmission.count({ where: { status: 'PENDING' } }),
+    prismaClient.organizationSetting.findUnique({
+      where: { organizationId },
+    }),
+    prismaClient.upiSubmission.count({
+      where: { ...orgWhere, status: 'PENDING' },
+    }),
   ]);
 
   const kpis: DashboardKPIData = {
@@ -284,7 +301,7 @@ export async function getDashboardStats(
       dueDateStr: dueStr,
       overdueDays,
       documentUrl: origin ? `${origin}/fees` : '/fees',
-      instituteName: settings?.instituteName || 'DPR Private Tuition',
+      instituteName: settings?.instituteName || 'Education Institute',
       contactPhone: settings?.phone || settings?.whatsapp || '+91 98765 43210',
     });
     const whatsappUrl = phone ? buildWhatsAppUrl(phone, msg) : undefined;

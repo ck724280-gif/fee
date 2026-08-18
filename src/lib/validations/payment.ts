@@ -4,6 +4,7 @@ import { PaymentMethod } from '@prisma/client';
 export const recordPaymentSchema = z.object({
   feeRecordId: z.string().min(1, 'Fee record ID is required'),
   amount: z.number({ required_error: 'Amount is required', invalid_type_error: 'Amount must be a number' })
+    .finite('Payment amount must be a finite number')
     .positive('Payment amount must be greater than zero'),
   paymentMethod: z.nativeEnum(PaymentMethod, {
     errorMap: () => ({ message: 'Invalid payment method' }),

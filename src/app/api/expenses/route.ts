@@ -1,51 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
 import { createExpenseSchema } from '@/lib/validations/expense';
-import { getExpenses, createExpense, generateExpensesCsv } from '@/lib/expense-service';
+import { getExpenses, createExpense } from '@/lib/expense-service';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await authorizeOrgRequest(req);
+
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search') || undefined;
-    const category = searchParams.get('category') as any || undefined;
-    const paymentMethod = searchParams.get('paymentMethod') as any || undefined;
+    const category = (searchParams.get('category') as any) || undefined;
+    const paymentMethod = (searchParams.get('paymentMethod') as any) || undefined;
     const startDate = searchParams.get('startDate') || undefined;
     const endDate = searchParams.get('endDate') || undefined;
-    const format = searchParams.get('format') || undefined;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
-    // If CSV download requested
-    if (format === 'csv') {
-      const result = await getExpenses({ search, category, paymentMethod, startDate, endDate, page: 1, limit: 10000 });
-      const csv = generateExpensesCsv(result.expenses);
-      return new NextResponse(csv, {
-        headers: {
-          'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="dpr-expenses-${new Date().toISOString().split('T')[0]}.csv"`,
-        },
-      });
-    }
-
-    const result = await getExpenses({ search, category, paymentMethod, startDate, endDate, page, limit });
+    const result = await getExpenses(
+      { search, category, paymentMethod, startDate, endDate, page, limit },
+      auth.organizationId
+    );
 
     return NextResponse.json({
       success: true,
       data: result,
     });
-  } catch (error: any) {
-    console.error('Error fetching expenses:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch expenses' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getCurrentUser(req);
-    const userId = req.headers.get('x-user-id') || session?.userId;
+    const auth = await authorizeOrgRequest(req);
 
     const body = await req.json();
     const parsed = createExpenseSchema.safeParse(body);
@@ -59,7 +46,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const expense = await createExpense(parsed.data, userId);
+    const expense = await createExpense(parsed.data, auth.organizationId, auth.userId);
 
     return NextResponse.json(
       {
@@ -69,11 +56,7 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 }
     );
-  } catch (error: any) {
-    console.error('Error recording expense:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to record expense' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

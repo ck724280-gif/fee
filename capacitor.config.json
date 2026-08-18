@@ -1,6 +1,6 @@
 {
   "appId": "com.dprtuition.app",
-  "appName": "DPR Tuition",
+  "appName": "Education Manager",
   "webDir": "public",
   "bundledWebRuntime": false,
   "server": {

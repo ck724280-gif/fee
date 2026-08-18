@@ -5,46 +5,43 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { navigationItems } from './Sidebar';
-import { BookOpen, X, LogOut, Sparkles } from 'lucide-react';
+import { X, LogOut, Sparkles, ShieldAlert } from 'lucide-react';
 
 export interface MobileNavProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+import { useBranding } from '@/components/DynamicBrandingProvider';
+
 export function MobileNav({ isOpen, onClose }: MobileNavProps) {
   const pathname = usePathname();
-  const [instituteName, setInstituteName] = useState('DPR Tuition');
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const { branding } = useBranding();
+  const [user, setUser] = useState<{
+    name: string;
+    email: string;
+    isSuperAdmin: boolean;
+  } | null>(null);
+
+  const instituteName = branding.instituteName || 'Education Workspace';
+  const logoUrl = branding.logoUrl;
 
   useEffect(() => {
-    const fetchSettings = async () => {
+    const fetchMe = async () => {
       try {
-        const res = await fetch('/api/settings');
-        const json = await res.json();
-        if (json.success && json.data) {
-          if (json.data.instituteName) setInstituteName(json.data.instituteName);
-          setLogoUrl(json.data.logoUrl || null);
+        const meRes = await fetch('/api/auth/me');
+        const meJson = await meRes.json();
+        if (meJson.authenticated && meJson.user) {
+          setUser({
+            name: meJson.user.name || 'Admin',
+            email: meJson.user.email,
+            isSuperAdmin: !!meJson.user.isSuperAdmin,
+          });
         }
       } catch (e) {}
     };
 
-    fetchSettings();
-
-    const handleSettingsUpdate = (e: any) => {
-      const data = e.detail;
-      if (data) {
-        if (data.instituteName) setInstituteName(data.instituteName);
-        setLogoUrl(data.logoUrl || null);
-      } else {
-        fetchSettings();
-      }
-    };
-
-    window.addEventListener('institute-settings-updated', handleSettingsUpdate);
-    return () => {
-      window.removeEventListener('institute-settings-updated', handleSettingsUpdate);
-    };
+    fetchMe();
   }, []);
 
   // Close on route change
@@ -89,6 +86,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
           <Link href="/settings" onClick={onClose} className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-pink-500 p-0.5 flex items-center justify-center text-white font-bold text-base shadow-md shadow-blue-600/30 overflow-hidden shrink-0">
               {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoUrl} alt="Logo" className="w-full h-full object-cover rounded-[10px]" />
               ) : (
                 <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center text-cyan-300">
@@ -98,7 +96,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="font-bold text-sm text-white truncate">{instituteName}</span>
-              <span className="text-[10px] text-blue-400 font-medium">Fee Management</span>
+              <span className="text-[10px] text-indigo-400 font-medium">Multi-Tenant SaaS</span>
             </div>
           </Link>
           <button
@@ -126,7 +124,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
                 className={cn(
                   'flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all min-h-[44px]',
                   isActive
-                    ? 'bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/20'
+                    ? 'bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-600/20'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 )}
               >
@@ -135,22 +133,35 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
               </Link>
             );
           })}
+
+          {user?.isSuperAdmin && (
+            <div className="pt-2">
+              <Link
+                href="/super-admin"
+                className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20"
+              >
+                <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Super Admin Platform</span>
+              </Link>
+            </div>
+          )}
         </nav>
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/40 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 flex items-center justify-center font-bold text-xs">
-              AD
+            <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center font-bold text-xs">
+              {user?.name?.charAt(0) || 'A'}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-semibold text-white truncate">DPR Admin</span>
-              <span className="text-[10px] text-slate-400 truncate">admin@dprtuition.com</span>
+              <span className="text-xs font-semibold text-white truncate">{user?.name || 'Admin'}</span>
+              <span className="text-[10px] text-slate-400 truncate">{user?.email || 'admin@tuition.com'}</span>
             </div>
           </div>
           <button
-            onClick={() => {
-              window.location.href = '/api/auth/logout';
+            onClick={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' });
+              window.location.href = '/login';
             }}
             className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             title="Sign Out"

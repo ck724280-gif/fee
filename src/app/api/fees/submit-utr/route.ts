@@ -18,12 +18,12 @@ export async function POST(req: NextRequest) {
 
     if (!cleanUtr || cleanUtr.length < 6) {
       return NextResponse.json(
-        { success: false, error: 'Please enter a valid 12-digit UPI Reference / UTR number (at least 6 characters).' },
+        { success: false, error: 'Please enter a valid UPI Reference / UTR number (at least 6 characters).' },
         { status: 400 }
       );
     }
 
-    // 2. Fetch Fee Record and Student (Name and Phone are strictly taken from database, cannot be overridden by user)
+    // 2. Fetch Fee Record and Student
     const feeRecord = await prisma.feeRecord.findUnique({
       where: { id: feeId },
       include: {
@@ -46,9 +46,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Check for Duplicate UTR in already settled payments
+    // 3. Check for Duplicate UTR in already settled payments in this organization
     const existingPayment = await prisma.payment.findFirst({
       where: {
+        organizationId: feeRecord.organizationId,
         transactionId: { equals: cleanUtr, mode: 'insensitive' },
       },
     });
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
     const existingPending = await prisma.upiSubmission.findFirst({
       where: {
         feeRecordId: feeRecord.id,
+        organizationId: feeRecord.organizationId,
         status: 'PENDING',
       },
     });
@@ -97,9 +99,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 5. Create new Pending UPI Submission (Pending Admin Verification)
+    // 5. Create new Pending UPI Submission with organizationId
     const submission = await prisma.upiSubmission.create({
       data: {
+        organizationId: feeRecord.organizationId,
         feeRecordId: feeRecord.id,
         studentId: feeRecord.studentId,
         utrNumber: cleanUtr,

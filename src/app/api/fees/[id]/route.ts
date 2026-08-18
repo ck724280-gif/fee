@@ -2,16 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { updateFeeRecordSchema } from '@/lib/validations/fee';
 import { FeeStatus } from '@prisma/client';
+import { authorizeOrgRequest, handleApiAuthError } from '@/lib/authorization';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(request);
     const { id } = await params;
 
-    const feeRecord = await prisma.feeRecord.findUnique({
-      where: { id },
+    const feeRecord = await prisma.feeRecord.findFirst({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+      },
       include: {
         student: {
           include: {
@@ -34,28 +39,18 @@ export async function GET(
       return NextResponse.json(
         {
           success: false,
-          error: `Fee record with ID ${id} not found`,
+          error: `Fee record with ID ${id} not found in your organization`,
         },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: feeRecord,
-      },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error('Error fetching fee record:', err);
-    return NextResponse.json(
-      {
-        success: false,
-        error: err.message || 'Failed to fetch fee record',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: true,
+      data: feeRecord,
+    });
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }
 
@@ -64,6 +59,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeOrgRequest(request);
     const { id } = await params;
     const body = await request.json();
 
@@ -79,15 +75,18 @@ export async function PATCH(
       );
     }
 
-    const existing = await prisma.feeRecord.findUnique({
-      where: { id },
+    const existing = await prisma.feeRecord.findFirst({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+      },
     });
 
     if (!existing) {
       return NextResponse.json(
         {
           success: false,
-          error: `Fee record with ID ${id} not found`,
+          error: `Fee record with ID ${id} not found in your organization`,
         },
         { status: 404 }
       );
@@ -100,76 +99,41 @@ export async function PATCH(
       updateData.notes = notes;
     }
 
-    let currentTotal = existing.totalAmount;
-    let currentPaid = existing.paidAmount;
-
     if (lateFeeAmount !== undefined) {
-      updateData.lateFeeAmount = lateFeeAmount;
-      currentTotal =
-        existing.baseAmount -
-        existing.discountAmount +
-        existing.admissionFeeAmount +
-        lateFeeAmount;
-      updateData.totalAmount = currentTotal;
-      updateData.outstandingAmount = Math.max(0, currentTotal - currentPaid);
+      const parsedLateFee = Number(lateFeeAmount);
+      const totalAmount = existing.baseAmount + existing.admissionFeeAmount - existing.discountAmount + parsedLateFee;
+      const outstandingAmount = Math.max(0, totalAmount - existing.paidAmount);
+
+      updateData.lateFeeAmount = parsedLateFee;
+      updateData.totalAmount = totalAmount;
+      updateData.outstandingAmount = outstandingAmount;
     }
 
     if (status !== undefined) {
-      updateData.status = status;
-      if (status === FeeStatus.WAIVED || status === FeeStatus.CANCELLED) {
-        // Excused or cancelled fees have 0 outstanding balance
-        updateData.outstandingAmount = 0;
-      } else if (status === FeeStatus.PAID) {
-        updateData.outstandingAmount = 0;
-      }
+      updateData.status = status as FeeStatus;
     }
 
     const updated = await prisma.feeRecord.update({
       where: { id },
       data: updateData,
-      include: {
-        student: {
-          select: { id: true, name: true, studentCode: true },
-        },
-        class: {
-          select: { id: true, name: true },
-        },
-        payments: true,
-      },
     });
 
-    const userId = request.headers.get('x-user-id') || null;
     await prisma.auditLog.create({
       data: {
-        userId,
+        userId: auth.userId,
+        organizationId: auth.organizationId,
         action: 'FEE_RECORD_UPDATED',
-        entity: 'FEE_RECORD',
+        entity: 'FeeRecord',
         entityId: id,
-        details: {
-          changes: validation.data,
-          studentCode: updated.student?.studentCode,
-          newStatus: updated.status,
-          newOutstanding: updated.outstandingAmount,
-        },
+        details: { previous: existing, updated: updateData },
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Fee record updated successfully',
-        data: updated,
-      },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error('Error updating fee record:', err);
-    return NextResponse.json(
-      {
-        success: false,
-        error: err.message || 'Failed to update fee record',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: true,
+      data: updated,
+    });
+  } catch (error) {
+    return handleApiAuthError(error);
   }
 }

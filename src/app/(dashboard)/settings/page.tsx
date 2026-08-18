@@ -25,31 +25,39 @@ import {
   Image as ImageIcon,
   Trash2,
   Sparkles,
+  QrCode,
+  Download,
+  Copy,
+  Check,
+  ShieldAlert,
+  Smartphone,
 } from 'lucide-react';
+import { useBranding } from '@/components/DynamicBrandingProvider';
 
 export default function SettingsPage() {
-  // Institute Settings Form State
+  const { updateBranding } = useBranding();
+  // Organization Branding Form State
   const [formData, setFormData] = useState({
-    instituteName: 'DPR Private Tuition',
-    tagline: 'Excellence in Academic Coaching & Guidance',
-    address: 'Station Road, Near City Center, West Bengal',
-    phone: '+91 98765 43210',
-    whatsapp: '+91 98765 43210',
-    email: 'info@dprtuition.com',
+    instituteName: '',
+    tagline: '',
+    address: '',
+    phone: '',
+    whatsapp: '',
+    email: '',
     logoUrl: '',
-    receiptPrefix: 'DPR-RC',
+    receiptPrefix: 'RC',
     currencySymbol: '₹',
     defaultGraceDays: 0,
-    upiId: 'dprtuition@upi',
-    upiPayeeName: 'DPR Private Tuition',
+    upiId: '',
+    upiPayeeName: '',
     upiEnabled: true,
     customQrUrl: '',
   });
 
   // Admin Profile & Security Form State
   const [adminData, setAdminData] = useState({
-    name: 'DPR Admin',
-    email: 'admin@dprtuition.com',
+    name: '',
+    email: '',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
@@ -57,6 +65,20 @@ export default function SettingsPage() {
 
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+
+  // 2FA State
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [setup2faData, setSetup2faData] = useState<{
+    secret?: string;
+    qrCodeDataUrl?: string;
+    recoveryCodes?: string[];
+  } | null>(null);
+  const [totpInputCode, setTotpInputCode] = useState('');
+  const [isSettingUp2fa, setIsSettingUp2fa] = useState(false);
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [showDisableModal, setShowDisableModal] = useState(false);
 
   // Status & Feedback States
   const [isLoading, setIsLoading] = useState(true);
@@ -70,48 +92,52 @@ export default function SettingsPage() {
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
 
+  const [twoFactorSuccess, setTwoFactorSuccess] = useState<string | null>(null);
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function loadData() {
       try {
         setIsLoading(true);
-        const [settingsRes, adminRes] = await Promise.all([
+        const [settingsRes, meRes] = await Promise.all([
           fetch('/api/settings'),
-          fetch('/api/auth/profile'),
+          fetch('/api/auth/me'),
         ]);
 
         const settingsJson = await settingsRes.json();
-        const adminJson = await adminRes.json();
+        const meJson = await meRes.json();
 
         if (settingsJson.success && settingsJson.data) {
           setFormData({
-            instituteName: settingsJson.data.instituteName || 'DPR Private Tuition',
+            instituteName: settingsJson.data.instituteName || '',
             tagline: settingsJson.data.tagline || '',
             address: settingsJson.data.address || '',
             phone: settingsJson.data.phone || '',
             whatsapp: settingsJson.data.whatsapp || '',
             email: settingsJson.data.email || '',
             logoUrl: settingsJson.data.logoUrl || '',
-            receiptPrefix: settingsJson.data.receiptPrefix || 'DPR-RC',
+            receiptPrefix: settingsJson.data.receiptPrefix || 'RC',
             currencySymbol: settingsJson.data.currencySymbol || '₹',
             defaultGraceDays: settingsJson.data.defaultGraceDays ?? 0,
-            upiId: settingsJson.data.upiId || 'dprtuition@upi',
-            upiPayeeName: settingsJson.data.upiPayeeName || settingsJson.data.instituteName || 'DPR Private Tuition',
+            upiId: settingsJson.data.upiId || '',
+            upiPayeeName: settingsJson.data.upiPayeeName || settingsJson.data.instituteName || '',
             upiEnabled: settingsJson.data.upiEnabled ?? true,
             customQrUrl: settingsJson.data.customQrUrl || '',
           });
         }
 
-        if (adminJson.success && adminJson.data) {
+        if (meJson.authenticated && meJson.user) {
           setAdminData((prev) => ({
             ...prev,
-            name: adminJson.data.name || 'DPR Admin',
-            email: adminJson.data.email || 'admin@dprtuition.com',
+            name: meJson.user.name || '',
+            email: meJson.user.email || '',
           }));
+          setTwoFactorEnabled(!!meJson.user.has2fa);
         }
       } catch (err: any) {
-        setInstituteError('Failed to load settings data');
+        console.error('Failed to load settings data:', err);
       } finally {
         setIsLoading(false);
       }
@@ -120,7 +146,17 @@ export default function SettingsPage() {
     loadData();
   }, []);
 
-  // Image Upload and Optimization Handler
+  const handleInstituteChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAdminChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setAdminData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Image Upload Handler
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -130,8 +166,8 @@ export default function SettingsPage() {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setInstituteError('Image size should be less than 5MB.');
+    if (file.size > 2 * 1024 * 1024) {
+      setInstituteError('Logo file size exceeds 2MB limit.');
       return;
     }
 
@@ -140,41 +176,13 @@ export default function SettingsPage() {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        // Resize and optimize image to max 300x300 for snappy loading
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 300;
-
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const optimizedBase64 = canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.9);
-          setFormData((prev) => ({ ...prev, logoUrl: optimizedBase64 }));
-        }
-        setIsProcessingLogo(false);
-      };
-      img.onerror = () => {
-        setIsProcessingLogo(false);
-        setInstituteError('Failed to process image. Please try another file.');
-      };
-      img.src = event.target?.result as string;
+      const base64 = event.target?.result as string;
+      setFormData((prev) => ({ ...prev, logoUrl: base64 }));
+      setIsProcessingLogo(false);
+    };
+    reader.onerror = () => {
+      setInstituteError('Failed to read image file.');
+      setIsProcessingLogo(false);
     };
     reader.readAsDataURL(file);
   };
@@ -186,541 +194,807 @@ export default function SettingsPage() {
     }
   };
 
-  // Handler for Institute Settings
-  const handleInstituteSubmit = async (e: React.FormEvent) => {
+  // Submit Institute Branding Settings
+  const handleSaveInstitute = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingInstitute(true);
-    setInstituteError(null);
     setInstituteSuccess(null);
+    setInstituteError(null);
 
     try {
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          defaultGraceDays: Number(formData.defaultGraceDays) || 0,
+        }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to update institute settings');
+        throw new Error(json.error || 'Failed to update organization settings');
       }
 
-      setInstituteSuccess('Institute configuration & logo saved successfully!');
-      
-      // Dispatch event so Sidebar and Navigation immediately reflect new Logo & Name
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('institute-settings-updated', { detail: json.data }));
-      }
+      updateBranding({
+        instituteName: formData.instituteName,
+        tagline: formData.tagline,
+        logoUrl: formData.logoUrl,
+        receiptPrefix: formData.receiptPrefix,
+        currencySymbol: formData.currencySymbol,
+      });
 
+      setInstituteSuccess('Organization branding & mobile app sync saved successfully!');
       setTimeout(() => setInstituteSuccess(null), 4000);
     } catch (err: any) {
-      setInstituteError(err.message || 'Error updating institute settings');
+      setInstituteError(err.message || 'An error occurred while saving organization settings');
     } finally {
       setIsSavingInstitute(false);
     }
   };
 
-  // Handler for Admin Account & Password Update
-  const handleAdminSubmit = async (e: React.FormEvent) => {
+  // Submit Admin Profile / Password
+  const handleSaveAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAdminError(null);
+    setIsSavingAdmin(true);
     setAdminSuccess(null);
+    setAdminError(null);
 
-    if (!adminData.currentPassword.trim()) {
-      setAdminError('Please enter your Current Password to authorize changes.');
+    if (adminData.newPassword && adminData.newPassword !== adminData.confirmPassword) {
+      setAdminError('New passwords do not match');
+      setIsSavingAdmin(false);
       return;
     }
-
-    if (adminData.newPassword && adminData.newPassword.trim().length > 0) {
-      if (adminData.newPassword.trim().length < 6) {
-        setAdminError('New password must be at least 6 characters long.');
-        return;
-      }
-      if (adminData.newPassword !== adminData.confirmPassword) {
-        setAdminError('New Password and Confirm Password do not match.');
-        return;
-      }
-    }
-
-    setIsSavingAdmin(true);
 
     try {
       const res = await fetch('/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: adminData.name.trim(),
-          email: adminData.email.trim(),
-          currentPassword: adminData.currentPassword,
-          newPassword: adminData.newPassword ? adminData.newPassword.trim() : undefined,
+          name: adminData.name,
+          email: adminData.email,
+          currentPassword: adminData.currentPassword || undefined,
+          newPassword: adminData.newPassword || undefined,
         }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to update admin credentials');
+        throw new Error(json.error || 'Failed to update admin profile');
       }
 
-      setAdminSuccess(json.message || 'Admin email and security credentials updated successfully!');
+      setAdminSuccess('Admin credentials updated successfully!');
       setAdminData((prev) => ({
         ...prev,
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
       }));
-      setTimeout(() => setAdminSuccess(null), 5000);
+      setTimeout(() => setAdminSuccess(null), 4000);
     } catch (err: any) {
-      setAdminError(err.message || 'Error updating admin credentials');
+      setAdminError(err.message || 'An error occurred while updating profile');
     } finally {
       setIsSavingAdmin(false);
     }
   };
 
+  // Initiate 2FA Setup
+  const handleStart2faSetup = async () => {
+    setTwoFactorLoading(true);
+    setTwoFactorError(null);
+    setTwoFactorSuccess(null);
+
+    try {
+      const res = await fetch('/api/auth/2fa/setup', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to initiate 2FA setup');
+
+      setSetup2faData(json);
+      setIsSettingUp2fa(true);
+    } catch (err: any) {
+      setTwoFactorError(err.message);
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  };
+
+  // Confirm 2FA Code
+  const handleConfirm2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!totpInputCode.trim() || totpInputCode.trim().length !== 6) {
+      setTwoFactorError('Please enter a valid 6-digit code from Google Authenticator.');
+      return;
+    }
+
+    setTwoFactorLoading(true);
+    setTwoFactorError(null);
+
+    try {
+      const res = await fetch('/api/auth/2fa/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: totpInputCode.trim() }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Invalid 2FA code. Please try again.');
+
+      setTwoFactorEnabled(true);
+      setIsSettingUp2fa(false);
+      setTwoFactorSuccess('Google Authenticator 2FA is now active for your account!');
+      setTotpInputCode('');
+    } catch (err: any) {
+      setTwoFactorError(err.message);
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  };
+
+  // Disable 2FA
+  const handleDisable2fa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disablePassword) {
+      setTwoFactorError('Current password is required to disable 2FA.');
+      return;
+    }
+
+    setTwoFactorLoading(true);
+    setTwoFactorError(null);
+
+    try {
+      const res = await fetch('/api/auth/2fa/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: disablePassword }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to disable 2FA');
+
+      setTwoFactorEnabled(false);
+      setShowDisableModal(false);
+      setDisablePassword('');
+      setTwoFactorSuccess('Two-Factor Authentication has been disabled.');
+    } catch (err: any) {
+      setTwoFactorError(err.message);
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  };
+
+  const copySecret = () => {
+    if (setup2faData?.secret) {
+      navigator.clipboard.writeText(setup2faData.secret);
+      setCopiedSecret(true);
+      setTimeout(() => setCopiedSecret(false), 2000);
+    }
+  };
+
+  const downloadRecoveryCodes = () => {
+    if (setup2faData?.recoveryCodes) {
+      const element = document.createElement('a');
+      const file = new Blob([setup2faData.recoveryCodes.join('\n')], { type: 'text/plain' });
+      element.href = URL.createObjectURL(file);
+      element.download = `backup-recovery-codes-${adminData.name.toLowerCase().replace(/\s+/g, '-')}.txt`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="text-sm font-medium text-slate-500">Loading Institute & Admin Settings...</span>
+        <p className="text-sm text-slate-500 font-medium">Loading organization configuration...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-8 pb-12">
       {/* Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          Settings & Administration
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+          <Settings className="w-6 h-6 text-blue-600" />
+          <span>Organization Settings & Security</span>
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-          Manage admin login credentials, password security, institute branding & logo, and fee policies
+        <p className="text-sm text-slate-500 mt-1">
+          Customize institute branding, dynamic PDF receipts, online UPI payments, and Google Authenticator 2FA.
         </p>
       </div>
 
-      {/* SECTION 1: Admin Account & Security Credentials */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-bold text-slate-900">Admin Account & Login Security</h2>
-        </div>
+      {/* Two-Factor Authentication (2FA) Security Card */}
+      <Card className="border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30 shadow-sm">
+        <CardHeader className="border-b border-indigo-50/80 pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-indigo-600" />
+              <span>Two-Factor Authentication (Google Authenticator)</span>
+            </CardTitle>
+            <span
+              className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                twoFactorEnabled
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}
+            >
+              {twoFactorEnabled ? '2FA Enabled & Protected' : '2FA Disabled'}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-5 space-y-4">
+          {twoFactorSuccess && <Alert variant="success">{twoFactorSuccess}</Alert>}
+          {twoFactorError && <Alert variant="danger">{twoFactorError}</Alert>}
 
-        {adminSuccess && <Alert variant="success">{adminSuccess}</Alert>}
-        {adminError && <Alert variant="danger">{adminError}</Alert>}
-
-        <form onSubmit={handleAdminSubmit}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm text-slate-800">
-                <KeyRound className="w-4 h-4 text-blue-600" />
-                <span>Change Admin Email ID & Password</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="Administrator Name"
-                  value={adminData.name}
-                  onChange={(e) => setAdminData({ ...adminData, name: e.target.value })}
-                  placeholder="DPR Admin"
-                  required
-                />
-
-                <Input
-                  label="Admin Login Email ID"
-                  type="email"
-                  value={adminData.email}
-                  onChange={(e) => setAdminData({ ...adminData, email: e.target.value })}
-                  placeholder="admin@dprtuition.com"
-                  helperText="This email will be used for future logins"
-                  required
-                />
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      New Password (Optional)
-                    </label>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showNewPassword ? 'text' : 'password'}
-                      value={adminData.newPassword}
-                      onChange={(e) => setAdminData({ ...adminData, newPassword: e.target.value })}
-                      placeholder="Leave blank to keep current password"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Min 6 characters if changing</span>
+          {!twoFactorEnabled && !isSettingUp2fa && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-indigo-50/50 border border-indigo-100">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-slate-900">
+                  Protect your workspace with Google Authenticator (TOTP)
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Confirm New Password
-                  </label>
-                  <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    value={adminData.confirmPassword}
-                    onChange={(e) => setAdminData({ ...adminData, confirmPassword: e.target.value })}
-                    placeholder="Repeat new password"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
+                <div className="text-xs text-slate-500">
+                  Adds an extra layer of security. You will be asked for a 6-digit verification code from your phone when signing in.
                 </div>
               </div>
+              <Button
+                type="button"
+                onClick={handleStart2faSetup}
+                isLoading={twoFactorLoading}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+              >
+                <QrCode className="w-4 h-4 mr-2" />
+                <span>Enable 2FA</span>
+              </Button>
+            </div>
+          )}
 
-              <div className="p-3.5 bg-amber-50/70 border border-amber-200/80 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex-1 w-full sm:max-w-md">
-                  <label className="block text-xs font-bold text-amber-900 mb-1">
-                    Current Password (Required for confirmation) *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showCurrentPassword ? 'text' : 'password'}
-                      value={adminData.currentPassword}
-                      onChange={(e) => setAdminData({ ...adminData, currentPassword: e.target.value })}
-                      placeholder="Enter current password to save"
-                      required
-                      className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+          {/* 2FA Setup Flow */}
+          {isSettingUp2fa && setup2faData && (
+            <div className="p-5 rounded-2xl bg-white border border-indigo-200 shadow-sm space-y-5">
+              <div className="text-sm font-bold text-slate-900">Step 1: Scan QR Code with Authenticator App</div>
+              <div className="flex flex-col sm:flex-row items-center gap-6">
+                {setup2faData.qrCodeDataUrl && (
+                  <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={setup2faData.qrCodeDataUrl}
+                      alt="TOTP QR Code"
+                      className="w-44 h-44 rounded-lg"
                     />
+                  </div>
+                )}
+                <div className="space-y-3 flex-1 text-xs text-slate-600">
+                  <p>
+                    1. Open <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong>, or <strong>Authy</strong> on your smartphone.
+                  </p>
+                  <p>2. Tap <strong>+</strong> and scan the QR code shown on the left.</p>
+                  <p>
+                    3. Or manually enter this secret key:
+                  </p>
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-100 border border-slate-200 font-mono text-slate-800 text-xs font-bold">
+                    <span className="truncate">{setup2faData.secret}</span>
                     <button
                       type="button"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                      onClick={copySecret}
+                      className="p-1 text-slate-500 hover:text-indigo-600 ml-auto shrink-0"
                     >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {copiedSecret ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
-
-                <Button
-                  variant="primary"
-                  type="submit"
-                  isLoading={isSavingAdmin}
-                  className="w-full sm:w-auto mt-2 sm:mt-5"
-                  leftIcon={<ShieldCheck className="w-4 h-4" />}
-                >
-                  Update Admin Credentials
-                </Button>
               </div>
-            </CardContent>
-          </Card>
-        </form>
-      </div>
 
-      {/* SECTION 2: Institute Branding & Defaults */}
-      <div className="space-y-4 pt-4 border-t border-slate-200">
-        <div className="flex items-center gap-2">
-          <Building className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-bold text-slate-900">Institute Information & Branding</h2>
-        </div>
-
-        {instituteSuccess && <Alert variant="success">{instituteSuccess}</Alert>}
-        {instituteError && <Alert variant="danger">{instituteError}</Alert>}
-
-        <form onSubmit={handleInstituteSubmit} className="space-y-6">
-          {/* Logo Upload & Customization Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-blue-600" />
-                <span>Institute Logo & Sidebar Avatar</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 text-white border border-slate-800">
-                {/* Live Logo Preview Box (Matching Sidebar Style) */}
-                <div className="flex flex-col items-center gap-2 shrink-0">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-pink-500 p-0.5 shadow-xl shadow-indigo-500/30 flex items-center justify-center overflow-hidden ring-2 ring-white/20 relative group">
-                    {formData.logoUrl && formData.logoUrl.trim().length > 0 ? (
-                      <img
-                        src={formData.logoUrl}
-                        alt="Institute Logo Preview"
-                        className="w-full h-full object-cover rounded-[14px]"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-cyan-300">
-                        <Sparkles className="w-7 h-7 text-cyan-400" />
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                    {formData.logoUrl ? 'Custom Logo' : 'Default Icon'}
-                  </span>
-                </div>
-
-                {/* Upload & Controls */}
-                <div className="flex-1 space-y-3">
-                  <div>
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>Change Institute Logo</span>
-                      <span className="text-[10px] font-normal px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full border border-blue-400/30">
-                        Appears in Sidebar, Header & Invoices
-                      </span>
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Upload your coaching institute logo or tuition brand icon. (PNG, JPG, WebP, SVG supported).
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="hidden"
-                      id="logo-file-upload"
-                    />
+              {/* Recovery Codes Box */}
+              {setup2faData.recoveryCodes && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <span>Step 2: Save Emergency Recovery Codes</span>
+                    </div>
                     <Button
                       type="button"
-                      variant="primary"
+                      variant="outline"
                       size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      isLoading={isProcessingLogo}
-                      leftIcon={<Upload className="w-4 h-4" />}
+                      onClick={downloadRecoveryCodes}
+                      className="text-xs h-7 border-amber-300 text-amber-900 hover:bg-amber-100"
                     >
-                      Choose Image File
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                      <span>Download .txt</span>
                     </Button>
-
-                    {formData.logoUrl && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleRemoveLogo}
-                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border-rose-800/40"
-                        leftIcon={<Trash2 className="w-4 h-4" />}
-                      >
-                        Reset to Default
-                      </Button>
-                    )}
                   </div>
-
-                  <div className="pt-2">
-                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                      Or Direct Image URL
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://your-domain.com/logo.png"
-                      value={formData.logoUrl}
-                      onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Branding & Identification */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Institute Branding & Identification</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="Institute Name"
-                  value={formData.instituteName}
-                  onChange={(e) => setFormData({ ...formData, instituteName: e.target.value })}
-                  required
-                />
-
-                <Input
-                  label="Motto / Tagline"
-                  value={formData.tagline}
-                  onChange={(e) => setFormData({ ...formData, tagline: e.target.value })}
-                />
-              </div>
-
-              <Input
-                label="Official Institute Address"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Contact & Communication */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Contact & Parental Communication</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Input
-                  label="Official Phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-
-                <Input
-                  label="Official WhatsApp Support"
-                  value={formData.whatsapp}
-                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                />
-
-                <Input
-                  label="Official Email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Online UPI Fee Collection & QR Setup */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-emerald-600" />
-                <span>Zero-Cost Online UPI Payment & Dynamic QR Gateway</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
-                <div>
-                  <span className="text-xs font-bold text-emerald-950 block">
-                    Accept UPI Payments On Student Invoices
-                  </span>
-                  <span className="text-[11px] text-emerald-700 block">
-                    Enables one-tap UPI app launching (GPay, PhonePe, Paytm) and dynamic QR codes on public fee notices
-                  </span>
-                </div>
-                <Switch
-                  checked={formData.upiEnabled}
-                  onChange={(val) => setFormData((prev) => ({ ...prev, upiEnabled: val }))}
-                  color="emerald"
-                  size="md"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="Institute UPI ID / VPA *"
-                  placeholder="e.g. 7631240967@upi or dprtuition@okaxis"
-                  value={formData.upiId}
-                  onChange={(e) => setFormData({ ...formData, upiId: e.target.value })}
-                  helperText="Payments from parents will be credited directly to this UPI ID (0% transaction fee)"
-                  required={formData.upiEnabled}
-                />
-
-                <Input
-                  label="UPI Payee Display Name *"
-                  placeholder="DPR Private Tuition"
-                  value={formData.upiPayeeName}
-                  onChange={(e) => setFormData({ ...formData, upiPayeeName: e.target.value })}
-                  helperText="Shown in UPI apps when parent opens the payment link"
-                  required={formData.upiEnabled}
-                />
-              </div>
-
-              <Input
-                label="Custom Scanner QR Image URL (Optional)"
-                placeholder="https://... (e.g. your physical PhonePe/GPay Standee QR image link)"
-                value={formData.customQrUrl}
-                onChange={(e) => setFormData({ ...formData, customQrUrl: e.target.value })}
-                helperText="Leave blank to automatically auto-generate dynamic QR codes for each student invoice"
-              />
-
-              {/* Live QR Preview Box */}
-              {formData.upiEnabled && (
-                <div className="p-4 bg-slate-900 text-white rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center gap-4">
-                  <div className="bg-white p-2.5 rounded-xl shrink-0 shadow-md">
-                    <img
-                      src={
-                        formData.customQrUrl && formData.customQrUrl.trim().length > 5
-                          ? formData.customQrUrl.trim()
-                          : `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
-                              `upi://pay?pa=${encodeURIComponent(
-                                formData.upiId || 'dprtuition@upi'
-                              )}&pn=${encodeURIComponent(
-                                formData.upiPayeeName || 'DPR Private Tuition'
-                              )}&cu=INR`
-                            )}&format=svg`
-                      }
-                      alt="Live UPI QR Preview"
-                      className="w-24 h-24 sm:w-28 sm:h-28 object-contain"
-                    />
-                  </div>
-                  <div className="space-y-1 text-center sm:text-left">
-                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
-                      <span>Live Invoice QR Preview</span>
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-100">
-                      {formData.upiPayeeName || 'DPR Private Tuition'}
-                    </h4>
-                    <p className="text-xs font-mono text-emerald-400 font-semibold">
-                      {formData.upiId || 'dprtuition@upi'}
-                    </p>
-                    <p className="text-[11px] text-slate-400">
-                      Parents will scan this QR code or tap the one-tap payment button on their digital invoice to pay fees directly to your bank account.
-                    </p>
+                  <p className="text-[11px] text-amber-700">
+                    If you lose access to your authenticator app, each code below can be used once to access your workspace.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-xs font-bold text-amber-950">
+                    {setup2faData.recoveryCodes.map((code, idx) => (
+                      <div key={idx} className="p-1.5 bg-white/80 rounded border border-amber-200 text-center">
+                        {code}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Financial & Invoicing Defaults */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Financial & Invoicing Defaults</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Step 3: Enter 6-digit confirmation code */}
+              <form onSubmit={handleConfirm2fa} className="pt-2 border-t border-slate-100 space-y-3">
+                <div className="text-sm font-bold text-slate-900">Step 3: Confirm 6-Digit Code</div>
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <Input
+                    type="text"
+                    maxLength={6}
+                    value={totpInputCode}
+                    onChange={(e) => setTotpInputCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Enter 6-digit code (e.g. 123456)"
+                    className="max-w-xs font-mono tracking-widest text-center"
+                    required
+                  />
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Button
+                      type="submit"
+                      isLoading={twoFactorLoading}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >
+                      Verify & Activate 2FA
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsSettingUp2fa(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {twoFactorEnabled && (
+            <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-50 border border-emerald-100">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="w-8 h-8 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="text-sm font-bold text-emerald-900">
+                    Two-Factor Authentication is Active
+                  </div>
+                  <div className="text-xs text-emerald-700">
+                    Your account is securely protected with Google Authenticator TOTP verification on every login.
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowDisableModal(true)}
+                className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50"
+              >
+                Disable 2FA
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Disable 2FA Modal */}
+      {showDisableModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
+              <ShieldAlert className="w-5 h-5" />
+              <span>Disable Two-Factor Authentication</span>
+            </div>
+            <p className="text-xs text-slate-600">
+              Disabling 2FA will reduce your account security. Please enter your account password to confirm.
+            </p>
+            <form onSubmit={handleDisable2fa} className="space-y-3">
+              <Input
+                type="password"
+                placeholder="Enter current password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                required
+              />
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowDisableModal(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="danger" isLoading={twoFactorLoading}>
+                  Confirm & Disable
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Organization Branding & Contact Settings Card */}
+      <form onSubmit={handleSaveInstitute}>
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-100 pb-4">
+            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Building className="w-5 h-5 text-blue-600" />
+              <span>Organization Branding & PDF Customization</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-6">
+            {instituteSuccess && <Alert variant="success">{instituteSuccess}</Alert>}
+            {instituteError && <Alert variant="danger">{instituteError}</Alert>}
+
+            {/* Mobile App & APK Branding Synchronization Preview */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-500/30 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400 shadow-inner">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Personalized Mobile App & Android Icon Sync</span>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        Live Auto-Sync
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      When you change your Institute Name or upload a Logo, your individual mobile app icon and launcher title dynamically update.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Simulated Phone Screen Icon & Name Preview */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-6 p-4 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md">
+                <div className="flex items-center gap-4">
+                  {/* App Icon Container */}
+                  <div className="relative group">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-pink-600 p-0.5 shadow-xl shadow-indigo-500/30 flex items-center justify-center overflow-hidden ring-2 ring-white/20">
+                      {formData.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={formData.logoUrl}
+                          alt="App Icon"
+                          className="w-full h-full object-cover rounded-[14px] bg-slate-950"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-cyan-400 font-bold">
+                          <Sparkles className="w-7 h-7" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-[10px] font-bold text-white flex items-center justify-center border-2 border-slate-900 shadow">
+                      ✓
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">
+                      Mobile App Name
+                    </div>
+                    <div className="text-base font-extrabold text-white tracking-tight truncate max-w-[280px]">
+                      {formData.instituteName || 'Education Manager'}
+                    </div>
+                    <div className="text-xs text-indigo-300 font-medium truncate max-w-[280px]">
+                      {formData.tagline || 'Education & Fee Management SaaS'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+                  <a
+                    href="/Education_Manager.apk"
+                    download="Education_Manager.apk"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-md shadow-blue-500/20"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Education_Manager.apk</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        alert(
+                          `📱 Personalized Mobile App Sync:\n\n1. When using the Android APK or Mobile Web, your app title automatically changes to "${formData.instituteName || 'Education Manager'}".\n2. To install this as an icon on your Android home screen: open this link in Chrome on your phone, tap the 3-dots menu (⋮), and tap "Add to Home screen" or "Install App".\n3. Your custom logo will appear on your phone's home screen!`
+                        );
+                      }
+                    }}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 border border-white/10 transition-colors cursor-pointer"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Mobile Sync Info</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Logo Upload Section */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                Institute Logo / Crest (Used in Invoices & PDF Receipts)
+              </label>
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-24 h-24 rounded-xl border border-slate-300 bg-white flex items-center justify-center overflow-hidden shadow-inner shrink-0">
+                  {formData.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={formData.logoUrl}
+                      alt="Logo preview"
+                      className="w-full h-full object-contain p-1"
+                    />
+                  ) : (
+                    <ImageIcon className="w-8 h-8 text-slate-300" />
+                  )}
+                </div>
+                <div className="space-y-2 flex-1 text-center sm:text-left">
+                  <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleLogoUpload}
+                      accept="image/png, image/jpeg, image/webp, image/svg+xml"
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isProcessingLogo}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      <span>{formData.logoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                    </Button>
+                    {formData.logoUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRemoveLogo}
+                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        <span>Remove</span>
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Recommended: Transparent PNG or SVG, max 2MB.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Institute Identity Fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Institute / Tuition Name"
+                name="instituteName"
+                value={formData.instituteName}
+                onChange={handleInstituteChange}
+                placeholder="e.g. DPR Private Tuition"
+                required
+              />
+              <Input
+                label="Tagline / Motto"
+                name="tagline"
+                value={formData.tagline}
+                onChange={handleInstituteChange}
+                placeholder="e.g. Excellence in Academic Coaching & Guidance"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input
+                label="Official Contact Phone"
+                name="phone"
+                value={formData.phone}
+                onChange={handleInstituteChange}
+                placeholder="+91 98765 43210"
+              />
+              <Input
+                label="Official WhatsApp Number"
+                name="whatsapp"
+                value={formData.whatsapp}
+                onChange={handleInstituteChange}
+                placeholder="+91 98765 43210"
+              />
+              <Input
+                label="Official Email Address"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleInstituteChange}
+                placeholder="info@yourinstitute.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                Full Physical Address
+              </label>
+              <textarea
+                name="address"
+                rows={2}
+                value={formData.address}
+                onChange={handleInstituteChange}
+                placeholder="e.g. Station Road, Near City Center, West Bengal"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+            </div>
+
+            {/* UPI & Payment Settings */}
+            <div className="pt-4 border-t border-slate-100 space-y-4">
+              <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+                <span>Online UPI Payment Configuration</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
-                  label="Receipt Prefix"
-                  value={formData.receiptPrefix}
-                  onChange={(e) => setFormData({ ...formData, receiptPrefix: e.target.value })}
-                  helperText="e.g. DPR-RC -> DPR-RC-2026-0001"
-                  required
+                  label="Institute UPI ID / VPA"
+                  name="upiId"
+                  value={formData.upiId}
+                  onChange={handleInstituteChange}
+                  placeholder="e.g. tuition@okaxis"
                 />
-
                 <Input
-                  label="Currency Symbol"
-                  value={formData.currencySymbol}
-                  onChange={(e) => setFormData({ ...formData, currencySymbol: e.target.value })}
-                  required
-                />
-
-                <Input
-                  label="Default Grace Days"
-                  type="number"
-                  min="0"
-                  value={formData.defaultGraceDays}
-                  onChange={(e) =>
-                    setFormData({ ...formData, defaultGraceDays: parseInt(e.target.value, 10) || 0 })
-                  }
-                  helperText="Default days before late fee applies"
+                  label="Payee Account Holder Name"
+                  name="upiPayeeName"
+                  value={formData.upiPayeeName}
+                  onChange={handleInstituteChange}
+                  placeholder="e.g. DPR Private Tuition"
                 />
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={formData.upiEnabled}
+                  onChange={(val: boolean) => setFormData((p) => ({ ...p, upiEnabled: val }))}
+                />
+                <span className="text-xs text-slate-700 font-medium">
+                  Enable dynamic UPI QR code generator on student invoices and WhatsApp payment links
+                </span>
+              </div>
+            </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Button
-              variant="primary"
-              size="lg"
-              type="submit"
-              isLoading={isSavingInstitute}
-              leftIcon={<Save className="w-4 h-4" />}
-            >
-              Save Institute Settings
-            </Button>
-          </div>
-        </form>
-      </div>
+            {/* Financial Prefixes */}
+            <div className="pt-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input
+                label="Receipt Prefix"
+                name="receiptPrefix"
+                value={formData.receiptPrefix}
+                onChange={handleInstituteChange}
+                placeholder="e.g. RC or DPR-RC"
+              />
+              <Input
+                label="Currency Symbol"
+                name="currencySymbol"
+                value={formData.currencySymbol}
+                onChange={handleInstituteChange}
+                placeholder="₹"
+              />
+              <Input
+                label="Default Grace Period (Days)"
+                name="defaultGraceDays"
+                type="number"
+                value={formData.defaultGraceDays}
+                onChange={handleInstituteChange}
+                placeholder="0"
+              />
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button type="submit" isLoading={isSavingInstitute} className="bg-blue-600 hover:bg-blue-700 text-white">
+                <Save className="w-4 h-4 mr-2" />
+                <span>Save Organization Settings</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </form>
+
+      {/* Admin Profile & Password Change */}
+      <form onSubmit={handleSaveAdmin}>
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-100 pb-4">
+            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <UserCheck className="w-5 h-5 text-blue-600" />
+              <span>Admin Profile & Password</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-4">
+            {adminSuccess && <Alert variant="success">{adminSuccess}</Alert>}
+            {adminError && <Alert variant="danger">{adminError}</Alert>}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Admin Full Name"
+                name="name"
+                value={adminData.name}
+                onChange={handleAdminChange}
+                placeholder="Admin Name"
+                required
+              />
+              <Input
+                label="Admin Email"
+                name="email"
+                type="email"
+                value={adminData.email}
+                onChange={handleAdminChange}
+                placeholder="admin@yourinstitute.com"
+                required
+              />
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    name="currentPassword"
+                    value={adminData.currentPassword}
+                    onChange={handleAdminChange}
+                    placeholder="Enter to change password"
+                    className="w-full px-3 pr-9 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    name="newPassword"
+                    value={adminData.newPassword}
+                    onChange={handleAdminChange}
+                    placeholder="Min 6 characters"
+                    className="w-full px-3 pr-9 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Confirm New Password
+                </label>
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  name="confirmPassword"
+                  value={adminData.confirmPassword}
+                  onChange={handleAdminChange}
+                  placeholder="Re-enter new password"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button type="submit" isLoading={isSavingAdmin} className="bg-blue-600 hover:bg-blue-700 text-white">
+                <Save className="w-4 h-4 mr-2" />
+                <span>Save Profile Changes</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </form>
     </div>
   );
 }

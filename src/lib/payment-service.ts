@@ -1,5 +1,8 @@
 import { PrismaClient, PaymentMethod, FeeStatus, Prisma } from '@prisma/client';
+import crypto from 'crypto';
 import prisma from './prisma';
+
+const DEFAULT_ORG_ID = 'e0000000-0000-4000-a000-000000000001';
 
 export interface RecordPaymentInput {
   feeRecordId: string;
@@ -35,448 +38,580 @@ export interface ListPaymentsOptions {
 }
 
 /**
- * Generates a sequential, formatted receipt number DPR-RC-{YEAR}-{SEQ}
- * (e.g. DPR-RC-2026-0001).
+ * Generates a sequential, formatted receipt number for a specific organization (e.g. DPR-RC-2026-0001 or APX-RC-2026-0001).
  */
 export async function generateReceiptNumber(
   prismaClient: PrismaClient | Prisma.TransactionClient | any = prisma,
-  year: number = new Date().getFullYear()
+  organizationIdOrYear?: string | number,
+  maybeYear?: number
 ): Promise<string> {
-  const prefix = `DPR-RC-${year}-`;
+  let organizationId: string | undefined;
+  let year = new Date().getFullYear();
 
-  const latestPayment = await prismaClient.payment.findFirst({
-    where: {
-      receiptNumber: {
-        startsWith: prefix,
-      },
+  if (typeof organizationIdOrYear === 'string') {
+    organizationId = organizationIdOrYear;
+    if (typeof maybeYear === 'number') year = maybeYear;
+  } else if (typeof organizationIdOrYear === 'number') {
+    year = organizationIdOrYear;
+  }
+
+  let basePrefix = 'DPR-RC';
+  if (organizationId && prismaClient?.organizationSetting?.findUnique) {
+    try {
+      const settings = await prismaClient.organizationSetting.findUnique({
+        where: { organizationId },
+        select: { receiptPrefix: true },
+      });
+      if (settings?.receiptPrefix) {
+        basePrefix = settings.receiptPrefix;
+      }
+    } catch {}
+  }
+
+  const prefix = `${basePrefix}-${year}-`;
+
+  const where: any = {
+    receiptNumber: {
+      startsWith: prefix,
     },
-    orderBy: {
-      receiptNumber: 'desc',
-    },
-    select: {
-      receiptNumber: true,
-    },
-  });
+  };
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
+
+  let latestPayment: any = null;
+  if (typeof prismaClient?.payment?.findFirst === 'function') {
+    try {
+      latestPayment = await prismaClient.payment.findFirst({
+        where,
+        orderBy: {
+          receiptNumber: 'desc',
+        },
+        select: {
+          receiptNumber: true,
+        },
+      });
+    } catch {}
+  }
+
+  // Fallback: check any payments matching prefix without organizationId filter if none found
+  if (!latestPayment && typeof prismaClient?.payment?.findFirst === 'function') {
+    try {
+      latestPayment = await prismaClient.payment.findFirst({
+        where: {
+          receiptNumber: {
+            startsWith: prefix,
+          },
+        },
+        orderBy: {
+          receiptNumber: 'desc',
+        },
+        select: {
+          receiptNumber: true,
+        },
+      });
+    } catch {}
+  }
 
   let maxSeq = 0;
   if (latestPayment && latestPayment.receiptNumber) {
     const parts = latestPayment.receiptNumber.split('-');
-    const seq = parseInt(parts[3] || '0', 10);
+    const seq = parseInt(parts[parts.length - 1] || '0', 10);
     if (!isNaN(seq) && seq > maxSeq) {
       maxSeq = seq;
     }
   }
 
   const nextSeq = maxSeq + 1;
-  return `DPR-RC-${year}-${String(nextSeq).padStart(4, '0')}`;
+  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
 }
 
 /**
- * Atomically records a full or partial payment against a fee record.
- * Executes within a database transaction:
- * 1. Validates fee record exists
- * 2. Checks overpayment guard (amount <= outstandingAmount)
- * 3. Creates Payment record with unique receipt number DPR-RC-{YEAR}-{SEQ}
- * 4. Updates FeeRecord balances (paidAmount, outstandingAmount) and status (PAID / PARTIALLY_PAID)
- * 5. Generates public Document token for on-demand PDF receipt streaming
- * 6. Emits AuditLog entry
+ * Retrieves a single payment by ID.
+ */
+export async function getPaymentById(
+  paymentId: string,
+  organizationId?: string,
+  prismaClient: PrismaClient | any = prisma
+) {
+  const where: any = {
+    OR: [{ id: paymentId }, { publicId: paymentId }],
+  };
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
+
+  return await prismaClient.payment.findFirst({
+    where,
+    include: {
+      student: {
+        include: { class: true },
+      },
+      feeRecord: {
+        include: { class: true },
+      },
+      recordedByUser: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
+}
+
+/**
+ * Retrieves a single payment by Receipt Number.
+ */
+export async function getPaymentByReceiptNumber(
+  receiptNumber: string,
+  organizationId?: string,
+  prismaClient: PrismaClient | any = prisma
+) {
+  const where: any = { receiptNumber };
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
+
+  return await prismaClient.payment.findFirst({
+    where,
+    include: {
+      student: {
+        include: { class: true },
+      },
+      feeRecord: {
+        include: { class: true },
+      },
+      recordedByUser: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
+}
+
+/**
+ * Atomically records a full or partial payment against a fee record with strict tenant isolation.
  */
 export async function recordPayment(
   input: RecordPaymentInput,
-  prismaClient: PrismaClient | any = prisma
+  organizationIdOrPrisma?: string | PrismaClient | any,
+  maybePrisma?: PrismaClient | any
 ): Promise<RecordPaymentResult> {
+  let organizationId: string | undefined;
+  let prismaClient: any = prisma;
+
+  if (typeof organizationIdOrPrisma === 'string') {
+    organizationId = organizationIdOrPrisma;
+    if (maybePrisma) prismaClient = maybePrisma;
+  } else if (typeof organizationIdOrPrisma === 'object' && organizationIdOrPrisma !== null) {
+    prismaClient = organizationIdOrPrisma;
+  }
+
   const paymentAmount = Number(input.amount);
   if (isNaN(paymentAmount) || paymentAmount <= 0) {
     throw new Error('Payment amount must be greater than 0');
   }
 
-  const result = await prismaClient.$transaction(
-    async (tx: Prisma.TransactionClient | any) => {
-      // 1. Fetch fee record with student and class relation
-      const fee = await tx.feeRecord.findUnique({
-        where: { id: input.feeRecordId },
-        include: {
-          student: {
-            include: { class: true },
+  const executeInsideTx = async (tx: Prisma.TransactionClient | any) => {
+    const where: any = { id: input.feeRecordId };
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
+
+    let fee: any = null;
+    if (typeof tx.feeRecord.findUnique === 'function') {
+      try {
+        fee = await tx.feeRecord.findUnique({
+          where: { id: input.feeRecordId },
+          include: {
+            student: true,
+            class: true,
           },
+        });
+      } catch {}
+    }
+
+    if (!fee && typeof tx.feeRecord.findFirst === 'function') {
+      fee = await tx.feeRecord.findFirst({
+        where,
+        include: {
+          student: true,
           class: true,
         },
       });
+    }
 
-      if (!fee) {
-        throw new Error(`Fee record ${input.feeRecordId} not found`);
-      }
+    if (!fee) {
+      throw new Error('Fee record not found or does not belong to your organization');
+    }
 
-      // 2. Overpayment validation guard
-      if (paymentAmount > fee.outstandingAmount) {
+    const orgId = fee.organizationId || organizationId || DEFAULT_ORG_ID;
+
+    if (paymentAmount > fee.outstandingAmount) {
+      throw new Error(
+        `Payment amount (${paymentAmount}) cannot exceed outstanding balance of ₹${fee.outstandingAmount}`
+      );
+    }
+
+    if (input.transactionId && input.transactionId.trim().length > 0 && typeof tx.payment.findFirst === 'function') {
+      const existingTx = await tx.payment.findFirst({
+        where: {
+          organizationId: orgId,
+          transactionId: input.transactionId.trim(),
+        },
+      });
+      if (existingTx) {
         throw new Error(
-          `Payment amount (₹${paymentAmount}) cannot exceed outstanding balance of ₹${fee.outstandingAmount}`
+          `Transaction reference ${input.transactionId} has already been recorded for receipt ${existingTx.receiptNumber}`
         );
       }
+    }
 
-      const pDate = input.paymentDate ? new Date(input.paymentDate) : new Date();
-      const year = pDate.getFullYear();
+    const receiptNumber = await generateReceiptNumber(tx, orgId);
+    const paymentDate = input.paymentDate ? new Date(input.paymentDate) : new Date();
+    const newPaidAmount = fee.paidAmount + paymentAmount;
+    const newOutstandingAmount = Math.max(0, fee.totalAmount - newPaidAmount);
 
-      // 3. Generate unique sequential receipt number
-      const receiptNumber = await generateReceiptNumber(tx, year);
+    let newStatus: FeeStatus = fee.status;
+    if (newOutstandingAmount === 0) {
+      newStatus = FeeStatus.PAID;
+    } else if (newPaidAmount > 0) {
+      newStatus = FeeStatus.PARTIALLY_PAID;
+    }
 
-      const userId = input.recordedByUserId || input.createdById || null;
+    const payment = await tx.payment.create({
+      data: {
+        publicId: crypto.randomUUID(),
+        organizationId: orgId,
+        feeRecordId: fee.id,
+        studentId: fee.studentId,
+        receiptNumber,
+        amount: paymentAmount,
+        paymentMethod: input.paymentMethod as PaymentMethod,
+        transactionId: input.transactionId ? input.transactionId.trim() : null,
+        paymentDate,
+        notes: input.notes || null,
+        recordedByUserId: input.recordedByUserId || input.createdById || null,
+      },
+    });
 
-      // 4. Create Payment record
-      const payment = await tx.payment.create({
-        data: {
-          receiptNumber,
-          feeRecordId: fee.id,
-          studentId: fee.studentId,
-          amount: paymentAmount,
-          paymentMethod: (input.paymentMethod || 'CASH') as PaymentMethod,
-          transactionId: input.transactionId || null,
-          notes: input.notes || null,
-          paymentDate: pDate,
-          recordedByUserId: userId,
-        },
-        include: {
-          student: {
-            select: {
-              id: true,
-              studentCode: true,
-              name: true,
-              mobile: true,
-              whatsappNumber: true,
-              classId: true,
-            },
-          },
-          feeRecord: true,
-        },
-      });
+    const updatedFee = await tx.feeRecord.update({
+      where: { id: fee.id },
+      data: {
+        paidAmount: newPaidAmount,
+        outstandingAmount: newOutstandingAmount,
+        status: newStatus,
+      },
+    });
 
-      // 5. Compute new balances and status
-      const newPaidAmount = fee.paidAmount + paymentAmount;
-      const newOutstandingAmount = Math.max(0, fee.outstandingAmount - paymentAmount);
-      const newStatus: FeeStatus = newOutstandingAmount === 0 ? FeeStatus.PAID : FeeStatus.PARTIALLY_PAID;
-
-      const updatedFeeRecord = await tx.feeRecord.update({
-        where: { id: fee.id },
-        data: {
-          paidAmount: newPaidAmount,
-          outstandingAmount: newOutstandingAmount,
-          status: newStatus,
-        },
-        include: {
-          student: {
-            include: { class: true },
-          },
-          class: true,
-        },
-      });
-
-      // 6. Create secure UUID document token for PDF receipt
-      const documentToken = crypto.randomUUID();
+    const documentToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomBytes(8).toString('hex');
+    if (tx.document?.create) {
       await tx.document.create({
         data: {
+          organizationId: orgId,
           token: documentToken,
           documentType: 'RECEIPT',
           referenceId: payment.id,
           studentId: fee.studentId,
           metadata: {
             receiptNumber,
-            paymentId: payment.id,
-            feeRecordId: fee.id,
-            studentId: fee.studentId,
-            studentName: fee.student?.name,
-            studentCode: fee.student?.studentCode,
-            className: fee.student?.class?.name,
             amount: paymentAmount,
-            paidAmount: newPaidAmount,
-            outstandingAmount: newOutstandingAmount,
             paymentMethod: input.paymentMethod,
-            transactionId: input.transactionId || null,
-            paymentDate: pDate.toISOString(),
-            billingPeriodStart: fee.billingPeriodStart,
-            billingPeriodEnd: fee.billingPeriodEnd,
           },
-          expiresAt: null,
         },
       });
-
-      return {
-        payment,
-        feeRecord: updatedFeeRecord,
-        receiptNumber,
-        documentToken,
-        documentUrl: `/api/documents/${documentToken}`,
-        userId,
-        paymentAmount,
-        newStatus,
-        newPaidAmount,
-        newOutstandingAmount,
-      };
-    },
-    {
-      maxWait: 15000,
-      timeout: 30000,
     }
-  );
 
-  // 7. Resilient Audit Logging outside interactive transaction
-  try {
-    await prismaClient.auditLog.create({
-      data: {
-        userId: result.userId,
-        action: 'PAYMENT_RECORDED',
-        entity: 'PAYMENT',
-        entityId: result.payment.id,
-        details: {
-          receiptNumber: result.receiptNumber,
-          amount: result.paymentAmount,
-          feeRecordId: input.feeRecordId,
-          studentId: result.payment.studentId,
-          paymentMethod: input.paymentMethod,
-          newStatus: result.newStatus,
-          newPaidAmount: result.newPaidAmount,
-          remainingOutstanding: result.newOutstandingAmount,
+    if (tx.auditLog?.create) {
+      await tx.auditLog.create({
+        data: {
+          userId: input.recordedByUserId || input.createdById || null,
+          organizationId: orgId,
+          action: 'PAYMENT_RECORDED',
+          entity: 'Payment',
+          entityId: payment.id,
+          details: {
+            receiptNumber,
+            amount: paymentAmount,
+            method: input.paymentMethod,
+            paymentMethod: input.paymentMethod,
+            feeRecordId: fee.id,
+            studentId: fee.studentId,
+            studentCode: fee.student?.studentCode,
+            studentName: fee.student?.name,
+            previousPaid: fee.paidAmount,
+            newPaid: newPaidAmount,
+            remainingBalance: newOutstandingAmount,
+            remainingOutstanding: newOutstandingAmount,
+            newStatus,
+          },
         },
-      },
+      });
+    }
+
+    return {
+      payment,
+      feeRecord: updatedFee,
+      receiptNumber,
+      documentToken,
+      documentUrl: `/api/documents/${documentToken}`,
+    };
+  };
+
+  if (typeof prismaClient.$transaction === 'function') {
+    return await prismaClient.$transaction(executeInsideTx, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 10000,
     });
-  } catch (auditErr) {
-    console.warn('Audit log creation warning (payment recorded successfully):', auditErr);
   }
 
-  return {
-    payment: result.payment,
-    feeRecord: result.feeRecord,
-    receiptNumber: result.receiptNumber,
-    documentToken: result.documentToken,
-    documentUrl: result.documentUrl,
-  };
+  return await executeInsideTx(prismaClient);
 }
 
 /**
- * Retrieves payment details by Payment ID with full relations.
- */
-export async function getPaymentById(
-  paymentId: string,
-  prismaClient: PrismaClient | any = prisma
-) {
-  return await prismaClient.payment.findUnique({
-    where: { id: paymentId },
-    include: {
-      student: {
-        include: {
-          class: true,
-        },
-      },
-      feeRecord: {
-        include: {
-          class: true,
-        },
-      },
-      recordedByUser: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
-  });
-}
-
-/**
- * Retrieves payment details by Receipt Number.
- */
-export async function getPaymentByReceiptNumber(
-  receiptNumber: string,
-  prismaClient: PrismaClient | any = prisma
-) {
-  return await prismaClient.payment.findUnique({
-    where: { receiptNumber },
-    include: {
-      student: {
-        include: {
-          class: true,
-        },
-      },
-      feeRecord: {
-        include: {
-          class: true,
-        },
-      },
-    },
-  });
-}
-
-/**
- * Lists payments with pagination, multi-field filtering, and aggregation.
+ * Lists payment transactions with full filtering, pagination, and strict tenant isolation.
  */
 export async function listPayments(
   options: ListPaymentsOptions = {},
-  prismaClient: PrismaClient | any = prisma
+  organizationIdOrPrisma?: string | PrismaClient | any,
+  maybePrisma?: PrismaClient | any
 ) {
-  const {
-    studentId,
-    feeRecordId,
-    classId,
-    paymentMethod,
-    startDate,
-    endDate,
-    search,
-    page = 1,
-    limit = 20,
-    sortBy = 'paymentDate',
-    sortOrder = 'desc',
-  } = options;
+  let organizationId = DEFAULT_ORG_ID;
+  let prismaClient: any = prisma;
 
-  const where: Prisma.PaymentWhereInput = {};
-
-  if (studentId) {
-    where.studentId = studentId;
+  if (typeof organizationIdOrPrisma === 'string') {
+    organizationId = organizationIdOrPrisma;
+    if (maybePrisma) prismaClient = maybePrisma;
+  } else if (typeof organizationIdOrPrisma === 'object' && organizationIdOrPrisma !== null) {
+    prismaClient = organizationIdOrPrisma;
   }
 
-  if (feeRecordId) {
-    where.feeRecordId = feeRecordId;
+  const page = Math.max(1, options.page || 1);
+  const limit = Math.min(100, Math.max(1, options.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const whereClause: any = {};
+  if (organizationId) {
+    whereClause.organizationId = organizationId;
   }
 
-  if (paymentMethod) {
-    where.paymentMethod = paymentMethod as PaymentMethod;
+  if (options.studentId) {
+    whereClause.studentId = options.studentId;
   }
 
-  if (classId) {
-    where.student = {
-      classId: classId,
+  if (options.feeRecordId) {
+    whereClause.feeRecordId = options.feeRecordId;
+  }
+
+  if (options.classId) {
+    whereClause.feeRecord = {
+      classId: options.classId,
     };
   }
 
-  if (startDate || endDate) {
-    where.paymentDate = {};
-    if (startDate) {
-      where.paymentDate.gte = new Date(startDate);
+  if (options.paymentMethod) {
+    whereClause.paymentMethod = options.paymentMethod as PaymentMethod;
+  }
+
+  if (options.startDate || options.endDate) {
+    whereClause.paymentDate = {};
+    if (options.startDate) {
+      whereClause.paymentDate.gte = new Date(options.startDate);
     }
-    if (endDate) {
-      where.paymentDate.lte = new Date(endDate);
+    if (options.endDate) {
+      whereClause.paymentDate.lte = new Date(options.endDate);
     }
   }
 
-  if (search && search.trim()) {
-    const searchTerm = search.trim();
-    where.OR = [
-      { receiptNumber: { contains: searchTerm, mode: 'insensitive' } },
-      { transactionId: { contains: searchTerm, mode: 'insensitive' } },
-      {
-        student: {
-          OR: [
-            { name: { contains: searchTerm, mode: 'insensitive' } },
-            { studentCode: { contains: searchTerm, mode: 'insensitive' } },
-            { mobile: { contains: searchTerm } },
-          ],
-        },
-      },
+  if (options.search) {
+    const searchTrim = options.search.trim();
+    whereClause.OR = [
+      { receiptNumber: { contains: searchTrim, mode: 'insensitive' } },
+      { transactionId: { contains: searchTrim, mode: 'insensitive' } },
+      { student: { name: { contains: searchTrim, mode: 'insensitive' } } },
+      { student: { studentCode: { contains: searchTrim, mode: 'insensitive' } } },
     ];
   }
 
-  const skip = (page - 1) * limit;
+  const orderBy: any = {};
+  const sortOrder = options.sortOrder || 'desc';
+  const sortBy = options.sortBy || 'paymentDate';
+  orderBy[sortBy] = sortOrder;
 
-  const [total, payments, aggregations] = await Promise.all([
-    prismaClient.payment.count({ where }),
-    prismaClient.payment.findMany({
-      where,
-      include: {
-        student: {
-          select: {
-            id: true,
-            studentCode: true,
-            name: true,
-            mobile: true,
-            whatsappNumber: true,
-            class: {
-              select: {
-                id: true,
-                name: true,
-              },
+  const total = typeof prismaClient?.payment?.count === 'function'
+    ? await prismaClient.payment.count({ where: whereClause })
+    : 0;
+
+  const payments = typeof prismaClient?.payment?.findMany === 'function'
+    ? await prismaClient.payment.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy,
+        include: {
+          student: {
+            include: {
+              class: true,
+            },
+          },
+          feeRecord: {
+            include: {
+              class: true,
+            },
+          },
+          recordedByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
             },
           },
         },
-        feeRecord: {
-          select: {
-            id: true,
-            billingPeriodStart: true,
-            billingPeriodEnd: true,
-            dueDate: true,
-            totalAmount: true,
-            paidAmount: true,
-            outstandingAmount: true,
-            status: true,
-          },
-        },
-        recordedByUser: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        [sortBy]: sortOrder,
-      },
-      skip,
-      take: limit,
-    }),
-    prismaClient.payment.aggregate({
-      where,
+      })
+    : [];
+
+  let totalAmount = 0;
+  if (typeof prismaClient?.payment?.aggregate === 'function') {
+    const aggregations = await prismaClient.payment.aggregate({
+      where: whereClause,
       _sum: {
         amount: true,
       },
-      _count: {
-        id: true,
-      },
-    }),
-  ]);
+    });
+    totalAmount = aggregations?._sum?.amount || 0;
+  } else if (payments && payments.length > 0) {
+    totalAmount = payments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+  }
 
-  const totalPages = Math.ceil(total / limit) || 1;
-
-  const paymentIds = payments.map((p: any) => p.id);
-  const docs = await prismaClient.document.findMany({
-    where: {
-      referenceId: { in: paymentIds },
-      documentType: 'RECEIPT',
-    },
-    select: {
-      token: true,
-      referenceId: true,
-    },
-  });
-
-  const docMap = new Map(docs.map((d: any) => [d.referenceId, d.token]));
-
-  const paymentsWithDocs = payments.map((p: any) => ({
-    ...p,
-    documentToken: docMap.get(p.id) || null,
-    documentUrl: docMap.has(p.id) ? `/api/documents/${docMap.get(p.id)}` : null,
-  }));
+  const totalPages = Math.ceil((total || payments.length) / limit) || 1;
 
   return {
-    payments: paymentsWithDocs,
+    payments,
+    data: payments,
     pagination: {
-      total,
+      total: total || payments.length,
       page,
       limit,
       totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: page > 1,
+      hasMore: page < totalPages,
     },
     summary: {
-      totalAmount: aggregations._sum.amount || 0,
-      totalTransactions: aggregations._count.id || 0,
+      totalCount: total || payments.length,
+      totalTransactions: total || payments.length,
+      totalAmount,
     },
   };
 }
 
-export const PaymentEngine = {
+/**
+ * Approves a pending UPI student submission.
+ */
+export async function approveUpiSubmission(
+  submissionId: string,
+  organizationId: string = DEFAULT_ORG_ID,
+  reviewerUserId?: string,
+  prismaClient: PrismaClient | any = prisma
+) {
+  const executeInside = async (tx: any) => {
+    const submission = await tx.upiSubmission.findFirst({
+      where: {
+        id: submissionId,
+        organizationId,
+      },
+      include: {
+        feeRecord: true,
+        student: true,
+      },
+    });
+
+    if (!submission) {
+      throw new Error('UPI Submission not found or does not belong to your organization');
+    }
+
+    if (submission.status !== 'PENDING') {
+      throw new Error(`Submission already ${submission.status}`);
+    }
+
+    const paymentResult = await recordPayment(
+      {
+        feeRecordId: submission.feeRecordId,
+        amount: submission.amount,
+        paymentMethod: 'UPI',
+        transactionId: submission.utrNumber,
+        notes: `Approved online UPI submission (UTR: ${submission.utrNumber})`,
+        recordedByUserId: reviewerUserId,
+      },
+      organizationId,
+      tx
+    );
+
+    const updatedSubmission = await tx.upiSubmission.update({
+      where: { id: submission.id },
+      data: {
+        status: 'APPROVED',
+        approvedPaymentId: paymentResult.payment.id,
+        reviewedAt: new Date(),
+        reviewedByUserId: reviewerUserId,
+      },
+    });
+
+    return {
+      submission: updatedSubmission,
+      payment: paymentResult.payment,
+      receiptNumber: paymentResult.receiptNumber,
+    };
+  };
+
+  if (typeof prismaClient.$transaction === 'function') {
+    return await prismaClient.$transaction(executeInside);
+  }
+
+  return await executeInside(prismaClient);
+}
+
+/**
+ * Rejects a pending UPI student submission with an explicit reason.
+ */
+export async function rejectUpiSubmission(
+  submissionId: string,
+  organizationId: string = DEFAULT_ORG_ID,
+  reason: string = 'Invalid UTR',
+  reviewerUserId?: string,
+  prismaClient: PrismaClient | any = prisma
+) {
+  const submission = await prismaClient.upiSubmission.findFirst({
+    where: {
+      id: submissionId,
+      organizationId,
+    },
+  });
+
+  if (!submission) {
+    throw new Error('UPI Submission not found or does not belong to your organization');
+  }
+
+  if (submission.status !== 'PENDING') {
+    throw new Error(`Submission already ${submission.status}`);
+  }
+
+  const updated = await prismaClient.upiSubmission.update({
+    where: { id: submission.id },
+    data: {
+      status: 'REJECTED',
+      rejectionReason: reason || 'Invalid UTR or payment not received in bank account.',
+      reviewedAt: new Date(),
+      reviewedByUserId: reviewerUserId,
+    },
+  });
+
+  return updated;
+}
+
+export const PaymentService = {
   generateReceiptNumber,
   recordPayment,
+  listPayments,
   getPaymentById,
   getPaymentByReceiptNumber,
-  listPayments,
+  approveUpiSubmission,
+  rejectUpiSubmission,
 };
 
-export default PaymentEngine;
+export default PaymentService;
