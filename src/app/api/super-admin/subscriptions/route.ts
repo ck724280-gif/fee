@@ -10,12 +10,20 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
       include: {
         organization: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            status: true,
-            organizationType: true,
+          include: {
+            settings: true,
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    mobile: true,
+                  },
+                },
+              },
+            },
           },
         },
         payments: {
