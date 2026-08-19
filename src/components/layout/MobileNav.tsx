@@ -6,13 +6,12 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { navigationItems } from './Sidebar';
 import { X, LogOut, Sparkles, ShieldAlert } from 'lucide-react';
+import { useBranding } from '@/components/DynamicBrandingProvider';
 
 export interface MobileNavProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-import { useBranding } from '@/components/DynamicBrandingProvider';
 
 export function MobileNav({ isOpen, onClose }: MobileNavProps) {
   const pathname = usePathname();

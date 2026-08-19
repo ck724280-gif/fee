@@ -38,39 +38,43 @@ export function DynamicBrandingProvider({ children }: { children: React.ReactNod
   const [branding, setBranding] = useState<OrganizationBranding>(defaultBranding);
 
   const applyDomBranding = (name: string, logo: string | null) => {
-    if (typeof document === 'undefined') return;
+    try {
+      if (typeof document === 'undefined') return;
 
-    // 1. Update Document Title
-    const activeName = name || 'Education Manager';
-    document.title = `${activeName} — Education & Fee Management`;
+      // 1. Update Document Title
+      const activeName = name || 'Education Manager';
+      document.title = `${activeName} — Education & Fee Management`;
 
-    // 2. Update Favicon & Apple Touch Icon
-    if (logo && logo.trim().length > 0) {
-      let iconLink = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-      if (!iconLink) {
-        iconLink = document.createElement('link');
-        iconLink.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(iconLink);
+      // 2. Update Favicon & Apple Touch Icon
+      if (logo && logo.trim().length > 0) {
+        let iconLink = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+        if (!iconLink) {
+          iconLink = document.createElement('link');
+          iconLink.rel = 'icon';
+          document.getElementsByTagName('head')[0]?.appendChild(iconLink);
+        }
+        iconLink.href = logo;
+
+        let appleIcon = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement;
+        if (!appleIcon) {
+          appleIcon = document.createElement('link');
+          appleIcon.rel = 'apple-touch-icon';
+          document.getElementsByTagName('head')[0]?.appendChild(appleIcon);
+        }
+        appleIcon.href = logo;
       }
-      iconLink.href = logo;
 
-      let appleIcon = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement;
-      if (!appleIcon) {
-        appleIcon = document.createElement('link');
-        appleIcon.rel = 'apple-touch-icon';
-        document.getElementsByTagName('head')[0].appendChild(appleIcon);
+      // 3. Update Web Manifest link
+      let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
+      if (!manifestLink) {
+        manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        document.getElementsByTagName('head')[0]?.appendChild(manifestLink);
       }
-      appleIcon.href = logo;
+      manifestLink.href = `/api/manifest?v=${Date.now()}`;
+    } catch (e) {
+      // Ignore DOM update failures on restricted browsers/webviews
     }
-
-    // 3. Update Web Manifest link
-    let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
-    if (!manifestLink) {
-      manifestLink = document.createElement('link');
-      manifestLink.rel = 'manifest';
-      document.getElementsByTagName('head')[0].appendChild(manifestLink);
-    }
-    manifestLink.href = `/api/manifest?v=${Date.now()}`;
   };
 
   const fetchBranding = async () => {

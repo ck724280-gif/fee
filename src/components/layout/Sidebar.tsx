@@ -20,6 +20,8 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 
+import { useBranding } from '@/components/DynamicBrandingProvider';
+
 export const navigationItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, accentColor: 'text-blue-400', badgeColor: 'bg-blue-500' },
   { name: 'Students', href: '/students', icon: Users, accentColor: 'text-cyan-400', badgeColor: 'bg-cyan-500' },
@@ -31,8 +33,6 @@ export const navigationItems = [
   { name: 'Membership Plan', href: '/subscription', icon: Sparkles, accentColor: 'text-amber-400', badgeColor: 'bg-amber-500' },
   { name: 'Settings', href: '/settings', icon: Settings, accentColor: 'text-slate-400', badgeColor: 'bg-slate-500' },
 ];
-
-import { useBranding } from '@/components/DynamicBrandingProvider';
 
 export function Sidebar() {
   const pathname = usePathname();
