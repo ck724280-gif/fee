@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
     // Retrieve all subscription payments / UTR submissions
     const payments = await prisma.subscriptionPayment.findMany({
-      orderBy: { paymentDate: 'desc' },
+      orderBy: { createdAt: 'desc' },
       include: {
         subscription: {
           include: {
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
           paymentDate: new Date(),
           paymentMethod: paymentMethod as any,
           referenceNumber: `UTR: ${String(utrNumber).trim()}`,
+          status: 'SETTLED',
           notes: notes ? `Approved UPI UTR: ${String(notes).trim()}` : `Approved UPI UTR (${receiptNumber})`,
           recordedByUserId: admin.userId,
         },
@@ -128,6 +129,101 @@ export async function POST(request: NextRequest) {
       message: `UPI Payment (UTR: ${utrNumber}) approved! Plan extended to ${newExpiry.toLocaleDateString('en-IN')}`,
       payment,
       newExpiryDate: newExpiry,
+    });
+  } catch (error) {
+    return handleApiAuthError(error);
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const admin = await requireSuperAdmin(request);
+    const body = await request.json();
+    const { paymentId, action = 'APPROVE', extendMonths = 1 } = body;
+
+    if (!paymentId) {
+      return NextResponse.json({ error: 'Payment ID is required.' }, { status: 400 });
+    }
+
+    const existingPayment = await prisma.subscriptionPayment.findUnique({
+      where: { id: paymentId },
+      include: {
+        subscription: {
+          include: { organization: true },
+        },
+      },
+    });
+
+    if (!existingPayment) {
+      return NextResponse.json({ error: 'Payment record not found.' }, { status: 404 });
+    }
+
+    if (action === 'REJECT') {
+      const rejected = await prisma.subscriptionPayment.update({
+        where: { id: paymentId },
+        data: { status: 'FAILED', notes: 'Rejected by Super Admin verification' },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Payment submission has been rejected.',
+        payment: rejected,
+      });
+    }
+
+    // Advance expiry date
+    const sub = existingPayment.subscription;
+    const currentExpiry = new Date(sub.expiryDate);
+    const now = new Date();
+    const baseDate = currentExpiry > now ? currentExpiry : now;
+    const newExpiry = new Date(baseDate);
+    newExpiry.setMonth(newExpiry.getMonth() + (Number(extendMonths) || 1));
+
+    const approved = await prisma.$transaction(async (tx) => {
+      const updatedPayment = await tx.subscriptionPayment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'SETTLED',
+          paymentDate: new Date(),
+          recordedByUserId: admin.userId,
+        },
+      });
+
+      await tx.subscription.update({
+        where: { id: sub.id },
+        data: {
+          expiryDate: newExpiry,
+          status: 'ACTIVE',
+        },
+      });
+
+      await tx.organization.update({
+        where: { id: sub.organizationId },
+        data: { status: 'ACTIVE' },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: admin.userId,
+          organizationId: sub.organizationId,
+          action: 'SUPER_ADMIN_APPROVED_PENDING_UPI',
+          entity: 'SubscriptionPayment',
+          entityId: paymentId,
+          details: {
+            amount: existingPayment.amount,
+            newExpiryDate: newExpiry.toISOString(),
+            orgName: sub.organization.name,
+          },
+        },
+      });
+
+      return updatedPayment;
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Payment approved! ${sub.organization.name}'s plan has been extended to ${newExpiry.toLocaleDateString('en-IN')}`,
+      payment: approved,
     });
   } catch (error) {
     return handleApiAuthError(error);

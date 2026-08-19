@@ -28,6 +28,7 @@ export const navigationItems = [
   { name: 'Payments', href: '/payments', icon: Receipt, accentColor: 'text-emerald-400', badgeColor: 'bg-emerald-500' },
   { name: 'Expenditure', href: '/expenses', icon: WalletCards, accentColor: 'text-rose-400', badgeColor: 'bg-rose-500' },
   { name: 'Reports', href: '/reports', icon: BarChart3, accentColor: 'text-indigo-400', badgeColor: 'bg-indigo-500' },
+  { name: 'Membership Plan', href: '/subscription', icon: Sparkles, accentColor: 'text-amber-400', badgeColor: 'bg-amber-500' },
   { name: 'Settings', href: '/settings', icon: Settings, accentColor: 'text-slate-400', badgeColor: 'bg-slate-500' },
 ];
 

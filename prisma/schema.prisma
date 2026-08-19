@@ -272,6 +272,7 @@ model SubscriptionPayment {
   paymentDate      DateTime      @default(now()) @map("payment_date")
   paymentMethod    PaymentMethod @default(UPI) @map("payment_method")
   referenceNumber  String?       @map("reference_number")
+  status           String        @default("SETTLED")
   notes            String?
   recordedByUserId String?       @map("recorded_by_user_id")
   createdAt        DateTime      @default(now()) @map("created_at")
@@ -530,3 +531,14 @@ model AuditLog {
   @@index([timestamp])
   @@map("audit_logs")
 }
+
+model PlatformSetting {
+  id           String   @id @default("master_platform_config")
+  upiId        String?  @default("admin@dprtuition.com") @map("upi_id")
+  upiPayeeName String?  @default("DPR Tuition Platform") @map("upi_payee_name")
+  upiEnabled   Boolean  @default(true) @map("upi_enabled")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
+

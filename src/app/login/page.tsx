@@ -342,16 +342,11 @@ function LoginForm() {
           </form>
         )}
 
-        {/* Footer Registration Link */}
+        {/* Footer Security Note */}
         <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-          <p className="text-xs text-slate-400">
-            Want to create a new institute?{' '}
-            <Link
-              href="/register"
-              className="text-blue-400 hover:text-blue-300 font-bold hover:underline ml-1"
-            >
-              Register Institute
-            </Link>
+          <p className="text-[11px] text-slate-400">
+            🔒 Private Tenant Workspace. Accounts are created exclusively by the{' '}
+            <strong className="text-slate-300 font-semibold">Master Super Administrator</strong>.
           </p>
         </div>
       </div>
