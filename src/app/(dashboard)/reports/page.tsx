@@ -47,10 +47,11 @@ export default function ReportsPage() {
       const stJson = await stRes.json();
 
       if (clsJson.success) setClasses(clsJson.data);
-      if (stJson.success) {
-        setStudentsList(stJson.data.students);
-        if (stJson.data.students.length > 0 && !studentId) {
-          setStudentId(stJson.data.students[0].id);
+      if (stJson.success || stJson.data || Array.isArray(stJson.students)) {
+        const list = stJson.data?.students || (Array.isArray(stJson.data) ? stJson.data : stJson.students || []);
+        setStudentsList(list);
+        if (list.length > 0 && !studentId) {
+          setStudentId(list[0].id);
         }
       }
     } catch (err) {

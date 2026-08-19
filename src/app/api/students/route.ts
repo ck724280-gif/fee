@@ -143,7 +143,23 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({
-      data: formattedStudents,
+      success: true,
+      data: {
+        students: formattedStudents,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total,
+          totalPages: Math.ceil(total / query.limit),
+        },
+        summary: {
+          totalStudents: total,
+          activeStudents: activeCount,
+          inactiveStudents: inactiveCount,
+          totalOutstanding: totalOutstandingAll,
+        },
+      },
+      students: formattedStudents,
       pagination: {
         page: query.page,
         limit: query.limit,

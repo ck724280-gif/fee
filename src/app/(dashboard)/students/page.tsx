@@ -99,10 +99,23 @@ export default function StudentsPage() {
         const res = await fetch(`/api/students?${params.toString()}`);
         const json = await res.json();
 
-        if (json.success) {
-          setStudents(json.data.students);
-          setPagination(json.data.pagination);
-          setSummary(json.data.summary);
+        if (json.success || json.data || Array.isArray(json.students)) {
+          const list = json.data?.students || (Array.isArray(json.data) ? json.data : json.students || []);
+          const pag = json.data?.pagination || json.pagination || {
+            total: list.length,
+            page: pageNumber,
+            limit: 20,
+            totalPages: Math.ceil(list.length / 20) || 1,
+          };
+          const sum = json.data?.summary || json.summary || {
+            totalStudents: pag.total || list.length,
+            activeStudents: list.filter((s: any) => s.status === 'ACTIVE').length,
+            totalOutstanding: 0,
+          };
+
+          setStudents(list);
+          setPagination(pag);
+          setSummary(sum);
         }
       } catch (err) {
         console.error('Failed to load students:', err);
@@ -446,7 +459,7 @@ export default function StudentsPage() {
       <StudentModal
         isOpen={isStudentModalOpen}
         onClose={() => setIsStudentModalOpen(false)}
-        onSuccess={() => fetchStudents(pagination.page)}
+        onSuccess={() => fetchStudents(1)}
         classes={classes}
         initialData={editingStudent}
       />
