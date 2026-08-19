@@ -79,6 +79,9 @@ export async function middleware(request: NextRequest) {
   // 6. Handling for Public Pages (e.g. /login, /register, /super-admin/login, /fees/[id])
   if (isPublicPage) {
     if (authPayload && (pathname === '/login' || pathname === '/register')) {
+      if (authPayload.isSuperAdmin && !authPayload.isImpersonating && !authPayload.organizationId) {
+        return NextResponse.redirect(new URL('/super-admin', request.url));
+      }
       return NextResponse.redirect(new URL('/', request.url));
     }
     if (authPayload && authPayload.isSuperAdmin && pathname === '/super-admin/login') {
@@ -135,6 +138,17 @@ export async function middleware(request: NextRequest) {
       response.cookies.delete(LEGACY_COOKIE_NAME);
     }
     return addSecurityHeaders(response);
+  }
+
+  // If Super Admin visits the root dashboard without impersonating, send them to Super Admin console
+  if (
+    authPayload &&
+    authPayload.isSuperAdmin &&
+    !authPayload.isImpersonating &&
+    !authPayload.organizationId &&
+    pathname === '/'
+  ) {
+    return NextResponse.redirect(new URL('/super-admin', request.url));
   }
 
   // 9. Authenticated request: Pass user & organization claims downstream in request headers
