@@ -110,6 +110,7 @@ export async function GET(
       const startStr = formatYMD(f.billingPeriodStart);
       const endStr = formatYMD(f.billingPeriodEnd);
       const dueStr = formatYMD(f.dueDate);
+      const billingPeriodStr = `${startStr} to ${endStr}`;
 
       const phone = student.whatsappNumber || student.mobile;
       const origin = process.env.NEXT_PUBLIC_APP_URL || '';
@@ -118,6 +119,7 @@ export async function GET(
         className: student.class.name,
         amountDue: f.outstandingAmount,
         dueDateStr: dueStr,
+        billingPeriodStr,
         documentUrl: origin ? `${origin}/fees/${f.id}` : `/fees/${f.id}`,
         instituteName: settings?.instituteName || auth.organizationName,
         contactPhone: settings?.phone || settings?.whatsapp || '',
@@ -129,7 +131,9 @@ export async function GET(
         cycleIndex: idx + 1,
         billingPeriodStart: startStr,
         billingPeriodEnd: endStr,
+        billingPeriodStr,
         dueDate: dueStr,
+        dueDateStr: dueStr,
         baseAmount: f.baseAmount,
         admissionFeeAmount: f.admissionFeeAmount,
         discountAmount: f.discountAmount,
@@ -167,10 +171,14 @@ export async function GET(
         transactionId: p.transactionId,
         notes: p.notes,
         paymentDate: formatYMD(p.paymentDate),
+        feePeriod: p.feeRecord
+          ? `${formatYMD(p.feeRecord.billingPeriodStart)} to ${formatYMD(p.feeRecord.billingPeriodEnd)}`
+          : 'N/A',
         billingPeriod: p.feeRecord
           ? `${formatYMD(p.feeRecord.billingPeriodStart)} to ${formatYMD(p.feeRecord.billingPeriodEnd)}`
           : 'N/A',
         documentUrl: token ? `/api/documents/${token}` : null,
+        documentToken: token || null,
       };
     });
 
@@ -178,53 +186,102 @@ export async function GET(
       (f) => f.status === 'OVERDUE' || f.status === 'DUE' || f.status === 'PARTIALLY_PAID'
     );
 
+    const phone = student.whatsappNumber || student.mobile;
+    const origin = process.env.NEXT_PUBLIC_APP_URL || '';
+
+    const whatsappReminderUrl = phone && nextDueRecord
+      ? buildWhatsAppUrl(
+          phone,
+          generateFeeReminderMessage({
+            studentName: student.name,
+            className: student.class.name,
+            amountDue: nextDueRecord.outstandingAmount,
+            dueDateStr: formatYMD(nextDueRecord.dueDate),
+            billingPeriodStr: `${formatYMD(nextDueRecord.billingPeriodStart)} to ${formatYMD(nextDueRecord.billingPeriodEnd)}`,
+            documentUrl: origin ? `${origin}/fees/${nextDueRecord.id}` : `/fees/${nextDueRecord.id}`,
+            instituteName: settings?.instituteName || auth.organizationName,
+            contactPhone: settings?.phone || settings?.whatsapp || '',
+          })
+        )
+      : undefined;
+
+    const studentPayload = {
+      id: student.id,
+      publicId: student.publicId,
+      studentCode: student.studentCode,
+      name: student.name,
+      fatherName: student.fatherName,
+      motherName: student.motherName,
+      guardianName: student.guardianName,
+      mobile: student.mobile,
+      whatsappNumber: student.whatsappNumber,
+      address: student.address,
+      dob: student.dob ? formatYMD(student.dob) : null,
+      gender: student.gender,
+      school: student.school,
+      classId: student.classId,
+      className: student.class.name,
+      class: student.class,
+      admissionDate: formatYMD(student.admissionDate),
+      joiningDate: student.joiningDate ? formatYMD(student.joiningDate) : null,
+      feeMode: student.feeMode,
+      classDefaultFee,
+      actualMonthlyFee,
+      customMonthlyFee: student.customMonthlyFee,
+      discountType: student.discountType,
+      discountValue: student.discountValue,
+      discountAmount,
+      effectiveMonthlyFee,
+      admissionFee: student.admissionFee,
+      status: student.status,
+      createdAt: student.createdAt,
+      updatedAt: student.updatedAt,
+    };
+
+    const feeConfigPayload = {
+      studentFeeMode: student.feeMode,
+      classDefaultFee,
+      actualMonthlyFee,
+      customMonthlyFee: student.customMonthlyFee,
+      discountType: student.discountType,
+      discountValue: student.discountValue,
+      discountAmount,
+      effectiveMonthlyFee,
+      admissionFee: student.admissionFee,
+    };
+
+    const financialSummaryPayload = {
+      totalBilled,
+      totalPaid,
+      totalOutstanding,
+      overdueAmount,
+      paidCyclesCount,
+      partialCyclesCount,
+      dueCyclesCount,
+      overdueCyclesCount,
+      totalCyclesCount: student.feeRecords.length,
+      nextDueDate: nextDueRecord ? formatYMD(nextDueRecord.dueDate) : null,
+      nextDueAmount: nextDueRecord ? nextDueRecord.outstandingAmount : 0,
+    };
+
+    const actionsPayload = {
+      hasPendingBalance: totalOutstanding > 0,
+      hasOverdueBalance: overdueAmount > 0,
+      canGenerateCycles: true,
+      whatsappReminderUrl,
+    };
+
     return NextResponse.json({
       success: true,
       data: {
-        id: student.id,
-        publicId: student.publicId,
-        studentCode: student.studentCode,
-        name: student.name,
-        fatherName: student.fatherName,
-        motherName: student.motherName,
-        guardianName: student.guardianName,
-        mobile: student.mobile,
-        whatsappNumber: student.whatsappNumber,
-        address: student.address,
-        dob: student.dob ? formatYMD(student.dob) : null,
-        gender: student.gender,
-        school: student.school,
-        classId: student.classId,
-        className: student.class.name,
-        admissionDate: formatYMD(student.admissionDate),
-        joiningDate: student.joiningDate ? formatYMD(student.joiningDate) : null,
-        feeMode: student.feeMode,
-        classDefaultFee,
-        actualMonthlyFee,
-        customMonthlyFee: student.customMonthlyFee,
-        discountType: student.discountType,
-        discountValue: student.discountValue,
-        discountAmount,
-        effectiveMonthlyFee,
-        admissionFee: student.admissionFee,
-        status: student.status,
-        financialSummary: {
-          totalBilled,
-          totalPaid,
-          totalOutstanding,
-          overdueAmount,
-          paidCyclesCount,
-          partialCyclesCount,
-          dueCyclesCount,
-          overdueCyclesCount,
-          totalCyclesCount: student.feeRecords.length,
-          nextDueDate: nextDueRecord ? formatYMD(nextDueRecord.dueDate) : null,
-          nextDueAmount: nextDueRecord ? nextDueRecord.outstandingAmount : 0,
-        },
+        ...studentPayload,
+        student: studentPayload,
+        feeConfiguration: feeConfigPayload,
+        financialSummary: financialSummaryPayload,
         feeTimeline,
         paymentHistory,
-        createdAt: student.createdAt,
-        updatedAt: student.updatedAt,
+        actions: actionsPayload,
+        instituteSettings: settings,
       },
     });
   } catch (error) {
@@ -249,7 +306,7 @@ export async function PATCH(
 
     if (!existingStudent) {
       return NextResponse.json(
-        { success: false, error: 'Student not found in your organization' },
+        { error: 'Student not found in your organization.' },
         { status: 404 }
       );
     }
@@ -257,50 +314,36 @@ export async function PATCH(
     const body = await req.json();
     const validatedData = updateStudentSchema.parse(body);
 
-    const updatePayload: any = {};
-    if (validatedData.name !== undefined) updatePayload.name = validatedData.name;
-    if (validatedData.fatherName !== undefined) updatePayload.fatherName = validatedData.fatherName;
-    if (validatedData.motherName !== undefined) updatePayload.motherName = validatedData.motherName;
-    if (validatedData.guardianName !== undefined) updatePayload.guardianName = validatedData.guardianName;
-    if (validatedData.mobile !== undefined) updatePayload.mobile = validatedData.mobile;
-    if (validatedData.whatsappNumber !== undefined) updatePayload.whatsappNumber = validatedData.whatsappNumber;
-    if (validatedData.address !== undefined) updatePayload.address = validatedData.address;
-    if (validatedData.dob !== undefined) updatePayload.dob = validatedData.dob ? new Date(validatedData.dob) : null;
-    if (validatedData.gender !== undefined) updatePayload.gender = validatedData.gender;
-    if (validatedData.school !== undefined) updatePayload.school = validatedData.school;
-    if (validatedData.classId !== undefined) updatePayload.classId = validatedData.classId;
-    if (validatedData.feeMode !== undefined) updatePayload.feeMode = validatedData.feeMode;
-    if (validatedData.customMonthlyFee !== undefined) updatePayload.customMonthlyFee = validatedData.customMonthlyFee;
-    if (validatedData.admissionFee !== undefined) updatePayload.admissionFee = validatedData.admissionFee;
-    if (validatedData.discountType !== undefined) updatePayload.discountType = validatedData.discountType;
-    if (validatedData.discountValue !== undefined) updatePayload.discountValue = validatedData.discountValue;
-    if (validatedData.status !== undefined) updatePayload.status = validatedData.status;
-
-    const updatedStudent = await prisma.$transaction(async (tx) => {
-      const student = await tx.student.update({
-        where: { id: existingStudent.id },
-        data: updatePayload,
-        include: { class: true },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId: auth.userId,
-          organizationId: auth.organizationId,
-          action: 'STUDENT_UPDATED',
-          entity: 'Student',
-          entityId: existingStudent.id,
-          details: { changes: updatePayload },
-        },
-      });
-
-      return student;
+    const updated = await prisma.student.update({
+      where: { id: existingStudent.id },
+      data: {
+        ...(validatedData.name && { name: validatedData.name }),
+        ...(validatedData.fatherName && { fatherName: validatedData.fatherName }),
+        ...(validatedData.motherName !== undefined && { motherName: validatedData.motherName }),
+        ...(validatedData.guardianName !== undefined && { guardianName: validatedData.guardianName }),
+        ...(validatedData.mobile && { mobile: validatedData.mobile }),
+        ...(validatedData.whatsappNumber !== undefined && { whatsappNumber: validatedData.whatsappNumber }),
+        ...(validatedData.address !== undefined && { address: validatedData.address }),
+        ...(validatedData.dob !== undefined && { dob: validatedData.dob ? new Date(validatedData.dob) : null }),
+        ...(validatedData.gender && { gender: validatedData.gender }),
+        ...(validatedData.school !== undefined && { school: validatedData.school }),
+        ...(validatedData.feeMode && { feeMode: validatedData.feeMode }),
+        ...(validatedData.customMonthlyFee !== undefined && {
+          customMonthlyFee: validatedData.feeMode === 'CUSTOM' ? validatedData.customMonthlyFee : null,
+        }),
+        ...(validatedData.discountType && { discountType: validatedData.discountType }),
+        ...(validatedData.discountValue !== undefined && { discountValue: validatedData.discountValue }),
+        ...(validatedData.status && { status: validatedData.status }),
+      },
+      include: {
+        class: true,
+      },
     });
 
     return NextResponse.json({
       success: true,
-      data: updatedStudent,
-      message: 'Student profile updated successfully',
+      data: updated,
+      message: 'Student updated successfully',
     });
   } catch (error) {
     return handleApiAuthError(error);
@@ -312,7 +355,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await authorizeOrgRequest(req, { allowedRoles: ['ORGANIZATION_ADMIN', 'SUPER_ADMIN'] });
+    const auth = await authorizeOrgRequest(req);
     const { id } = await params;
 
     const student = await prisma.student.findFirst({
@@ -320,46 +363,42 @@ export async function DELETE(
         OR: [{ id }, { publicId: id }],
         organizationId: auth.organizationId,
       },
-      include: {
-        payments: { select: { id: true } },
-      },
     });
 
     if (!student) {
       return NextResponse.json(
-        { success: false, error: 'Student not found in your organization' },
+        { error: 'Student not found in your organization' },
         { status: 404 }
       );
     }
 
-    // Preserve historical accounting: soft-delete if payments exist
-    if (student.payments.length > 0) {
-      const updated = await prisma.student.update({
-        where: { id: student.id },
-        data: { status: 'INACTIVE' },
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          userId: auth.userId,
-          organizationId: auth.organizationId,
-          action: 'STUDENT_DEACTIVATED',
-          entity: 'Student',
-          entityId: student.id,
-          details: { reason: 'Student deactivated due to existing financial history' },
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: 'Student has existing payment records and was safely deactivated instead of deleted.',
-        data: updated,
-      });
-    }
-
     await prisma.$transaction(async (tx) => {
-      await tx.feeRecord.deleteMany({ where: { studentId: student.id } });
-      await tx.student.delete({ where: { id: student.id } });
+      // 1. Delete Payments
+      await tx.payment.deleteMany({
+        where: { studentId: student.id, organizationId: auth.organizationId },
+      });
+
+      // 2. Delete UPI Submissions
+      await tx.upiSubmission.deleteMany({
+        where: { studentId: student.id, organizationId: auth.organizationId },
+      });
+
+      // 3. Delete Fee Records
+      await tx.feeRecord.deleteMany({
+        where: { studentId: student.id, organizationId: auth.organizationId },
+      });
+
+      // 4. Delete Generated Documents
+      await tx.document.deleteMany({
+        where: { studentId: student.id, organizationId: auth.organizationId },
+      });
+
+      // 5. Delete Student
+      await tx.student.delete({
+        where: { id: student.id },
+      });
+
+      // 6. Record Audit Log
       await tx.auditLog.create({
         data: {
           userId: auth.userId,
@@ -367,14 +406,17 @@ export async function DELETE(
           action: 'STUDENT_DELETED',
           entity: 'Student',
           entityId: student.id,
-          details: { studentCode: student.studentCode, name: student.name },
+          details: {
+            name: student.name,
+            studentCode: student.studentCode,
+          },
         },
       });
     });
 
     return NextResponse.json({
       success: true,
-      message: 'Student and related records deleted successfully',
+      message: 'Student and all associated fee records deleted permanently',
     });
   } catch (error) {
     return handleApiAuthError(error);

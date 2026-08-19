@@ -129,7 +129,53 @@ export default function StudentProfilePage({
     );
   }
 
-  const { student, feeConfiguration, financialSummary, feeTimeline, paymentHistory, actions } = studentData;
+  const rawStudent = studentData?.student || studentData || {};
+  const studentClass = rawStudent.class || { name: studentData?.className || rawStudent.className || 'General Class' };
+  const student = {
+    ...rawStudent,
+    class: studentClass,
+    name: rawStudent.name || studentData?.name || 'Student',
+    studentCode: rawStudent.studentCode || studentData?.studentCode || 'N/A',
+    status: rawStudent.status || studentData?.status || 'ACTIVE',
+    admissionDate: rawStudent.admissionDate || new Date().toISOString(),
+    dob: rawStudent.dob || null,
+    fatherName: rawStudent.fatherName || '—',
+    motherName: rawStudent.motherName || '—',
+    guardianName: rawStudent.guardianName || '—',
+    mobile: rawStudent.mobile || '',
+    whatsappNumber: rawStudent.whatsappNumber || rawStudent.mobile || '',
+    address: rawStudent.address || '',
+    school: rawStudent.school || '',
+    feeMode: rawStudent.feeMode || 'DEFAULT',
+  };
+
+  const feeConfiguration = studentData?.feeConfiguration || {
+    effectiveMonthlyFee: studentData?.effectiveMonthlyFee || studentData?.actualMonthlyFee || 0,
+    classDefaultFee: studentData?.classDefaultFee || 0,
+    studentFeeMode: student.feeMode || 'DEFAULT',
+    discountType: student.discountType || 'NONE',
+    discountValue: student.discountValue || 0,
+  };
+
+  const financialSummary = studentData?.financialSummary || {
+    totalBilled: 0,
+    totalPaid: 0,
+    totalOutstanding: 0,
+    overdueAmount: 0,
+    paidCyclesCount: 0,
+    partialCyclesCount: 0,
+    dueCyclesCount: 0,
+    overdueCyclesCount: 0,
+    totalCyclesCount: 0,
+  };
+
+  const feeTimeline = Array.isArray(studentData?.feeTimeline) ? studentData.feeTimeline : [];
+  const paymentHistory = Array.isArray(studentData?.paymentHistory) ? studentData.paymentHistory : [];
+  const actions = studentData?.actions || {
+    hasPendingBalance: financialSummary.totalOutstanding > 0,
+    hasOverdueBalance: financialSummary.overdueAmount > 0,
+    canGenerateCycles: true,
+  };
 
   const handleOpenCollectForCycle = (fee: any) => {
     setCollectingFeeRecord({
@@ -289,7 +335,7 @@ export default function StudentProfilePage({
               <span>Mobile: <strong>{student.mobile}</strong></span>
               <span>•</span>
               <span>
-                Admission Anchor: <strong>Day {new Date(student.admissionDate).getDate()}</strong> ({formatDate(student.admissionDate)})
+                Admission Anchor: <strong>Day {student.admissionDate ? (student.admissionDate.includes('-') ? parseInt(student.admissionDate.split('-')[2] || '1', 10) : new Date(student.admissionDate).getDate()) : 1}</strong> ({formatDate(student.admissionDate)})
               </span>
             </p>
           </div>
@@ -490,11 +536,7 @@ export default function StudentProfilePage({
                         {p.receiptNumber}
                       </td>
                       <td className="px-6 py-4 text-slate-600">
-                        {new Date(p.paymentDate).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
+                        {formatDate(p.paymentDate)}
                       </td>
                       <td className="px-6 py-4 text-slate-700">{p.feePeriod}</td>
                       <td className="px-6 py-4">
