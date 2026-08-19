@@ -20,6 +20,9 @@ export interface AuthPayload {
   organizationName?: string;
   isSuperAdmin?: boolean;
   totpVerified?: boolean;
+  isImpersonating?: boolean;
+  impersonatorAdminId?: string;
+  impersonatorAdminEmail?: string;
   sub?: string;
   iat?: number;
   exp?: number;
@@ -61,6 +64,9 @@ export async function signToken(
     organizationName: payload.organizationName || '',
     isSuperAdmin: !!payload.isSuperAdmin,
     totpVerified: !!payload.totpVerified,
+    isImpersonating: !!payload.isImpersonating,
+    impersonatorAdminId: payload.impersonatorAdminId || '',
+    impersonatorAdminEmail: payload.impersonatorAdminEmail || '',
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(userId)
@@ -144,6 +150,9 @@ export async function verifyToken(token: string): Promise<AuthPayload> {
     organizationName: payload.organizationName as string | undefined,
     isSuperAdmin: Boolean(payload.isSuperAdmin),
     totpVerified: Boolean(payload.totpVerified),
+    isImpersonating: Boolean(payload.isImpersonating),
+    impersonatorAdminId: payload.impersonatorAdminId as string | undefined,
+    impersonatorAdminEmail: payload.impersonatorAdminEmail as string | undefined,
     sub: payload.sub,
     iat: payload.iat,
     exp: payload.exp,

@@ -75,27 +75,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sanitizedEmail = String(ownerEmail).trim().toLowerCase();
-    const sanitizedOrgName = String(name).trim();
-
-    // Check if user exists
-    let user = await prisma.user.findUnique({
-      where: { email: sanitizedEmail },
-    });
-
-    if (!user) {
-      const passwordHash = await hashPassword(ownerPassword);
-      user = await prisma.user.create({
-        data: {
-          email: sanitizedEmail,
-          passwordHash,
-          name: String(ownerName).trim(),
-          mobile: ownerMobile ? String(ownerMobile).trim() : null,
-        },
-      });
+    if (String(ownerPassword).trim().length < 6) {
+      return NextResponse.json(
+        { error: 'Administrator password must be at least 6 characters long.' },
+        { status: 400 }
+      );
     }
 
+    const sanitizedEmail = String(ownerEmail).trim().toLowerCase();
+    const sanitizedOrgName = String(name).trim();
+    const sanitizedOwnerName = String(ownerName).trim();
+    const sanitizedMobile = ownerMobile ? String(ownerMobile).trim() : null;
+
+    const passwordHash = await hashPassword(String(ownerPassword).trim());
     const orgSlug = generateSlug(sanitizedOrgName);
+    const orgId = crypto.randomUUID();
     const orgPublicId = crypto.randomUUID();
     const cleanPrefix = sanitizedOrgName.replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase() || 'RC';
 
@@ -109,8 +103,36 @@ export async function POST(request: NextRequest) {
     }
 
     const newOrg = await prisma.$transaction(async (tx) => {
+      // 1. Find or create user
+      let user = await tx.user.findUnique({
+        where: { email: sanitizedEmail },
+      });
+
+      if (!user) {
+        user = await tx.user.create({
+          data: {
+            email: sanitizedEmail,
+            passwordHash,
+            name: sanitizedOwnerName,
+            mobile: sanitizedMobile,
+          },
+        });
+      } else {
+        // Update user credentials if existing
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            name: sanitizedOwnerName,
+            passwordHash,
+            mobile: sanitizedMobile || user.mobile,
+          },
+        });
+      }
+
+      // 2. Create organization
       const org = await tx.organization.create({
         data: {
+          id: orgId,
           publicId: orgPublicId,
           name: sanitizedOrgName,
           slug: orgSlug,
@@ -119,6 +141,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // 3. Link user to organization as ORGANIZATION_ADMIN
       await tx.organizationMember.create({
         data: {
           userId: user.id,
@@ -128,6 +151,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // 4. Create initial organization settings
       await tx.organizationSetting.create({
         data: {
           organizationId: org.id,
@@ -136,10 +160,11 @@ export async function POST(request: NextRequest) {
           feePrefix: `${cleanPrefix}-FEE`,
           currencySymbol: '₹',
           email: sanitizedEmail,
-          phone: ownerMobile ? String(ownerMobile).trim() : null,
+          phone: sanitizedMobile,
         },
       });
 
+      // 5. Create initial subscription
       await tx.subscription.create({
         data: {
           organizationId: org.id,
@@ -153,6 +178,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // 6. Record audit log
       await tx.auditLog.create({
         data: {
           userId: admin.userId,
@@ -169,10 +195,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Organization created successfully by Super Admin',
+      message: `Institution "${newOrg.name}" created successfully! Login credentials are active.`,
       organization: newOrg,
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Error creating organization:', error);
     return handleApiAuthError(error);
   }
 }

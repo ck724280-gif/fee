@@ -32,6 +32,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  Zap,
 } from 'lucide-react';
 
 const ORG_TYPES = [
@@ -173,6 +174,23 @@ export default function OrganizationsManagementPage() {
       setError(err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleAccessInstitute = async (orgId: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/super-admin/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: orgId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to access institution');
+      window.location.href = json.redirectUrl || '/';
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
     }
   };
 
@@ -414,6 +432,16 @@ export default function OrganizationsManagementPage() {
                         </span>
                       </td>
                       <td className="py-4 px-5 text-right space-x-1.5">
+                        {/* Direct Access / Impersonate Button */}
+                        <button
+                          onClick={() => handleAccessInstitute(org.id)}
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-bold text-xs transition cursor-pointer inline-flex items-center gap-1 shadow-sm active:scale-95"
+                          title="Access and manage this institute workspace directly as Master Admin"
+                        >
+                          <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Access</span>
+                        </button>
+
                         {/* Edit Button */}
                         <button
                           onClick={() => handleOpenEdit(org)}

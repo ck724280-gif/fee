@@ -32,6 +32,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  Zap,
 } from 'lucide-react';
 
 const ORG_TYPES = [
@@ -277,8 +278,33 @@ export default function OrgDetailPage({ params }: { params: Promise<{ id: string
           </div>
         </div>
 
-        {/* Action Buttons: Edit, Suspend, Delete */}
+        {/* Action Buttons: Access, Edit, Suspend, Delete */}
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Direct Access / Impersonate Button */}
+          <button
+            onClick={async () => {
+              try {
+                setLoading(true);
+                const res = await fetch('/api/super-admin/impersonate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ organizationId: org.id }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || 'Failed to access institution');
+                window.location.href = json.redirectUrl || '/';
+              } catch (err: any) {
+                setError(err.message);
+                setLoading(false);
+              }
+            }}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+            title="Access and manage this institute workspace directly as Master Admin"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>Open &amp; Manage Workspace</span>
+          </button>
+
           {/* Edit Button */}
           <button
             onClick={() => {
@@ -288,7 +314,7 @@ export default function OrgDetailPage({ params }: { params: Promise<{ id: string
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/20 transition flex items-center gap-1.5 cursor-pointer"
           >
             <Edit2 className="w-3.5 h-3.5" />
-            <span>Edit Organization &amp; Credentials</span>
+            <span>Edit Details &amp; Password</span>
           </button>
 
           {/* Suspend / Reactivate */}

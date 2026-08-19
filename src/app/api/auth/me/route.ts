@@ -40,12 +40,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
-    // Active organization
-    const currentMembership = user.memberships.find(
+    // Determine active organization
+    let currentMembership = user.memberships.find(
       (m) => m.organizationId === session.organizationId
     ) || user.memberships[0];
 
-    const currentOrg = currentMembership?.organization;
+    let currentOrg = currentMembership?.organization;
+
+    // If Super Admin is accessing / impersonating an organization not directly in their memberships
+    if (!currentOrg && user.isSuperAdmin && session.organizationId) {
+      currentOrg = (await prisma.organization.findUnique({
+        where: { id: session.organizationId },
+        include: {
+          settings: true,
+          subscriptions: {
+            where: { status: 'ACTIVE' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      })) as any;
+    }
 
     return NextResponse.json({
       authenticated: true,
@@ -55,8 +70,10 @@ export async function GET(request: NextRequest) {
         name: user.name,
         mobile: user.mobile,
         isSuperAdmin: user.isSuperAdmin,
-        role: session.role || currentMembership?.role || 'ORGANIZATION_ADMIN',
+        role: session.role || currentMembership?.role || (user.isSuperAdmin ? 'SUPER_ADMIN' : 'ORGANIZATION_ADMIN'),
         twoFactorEnabled: !!user.totpSecret?.isEnabled,
+        isImpersonating: Boolean(session.isImpersonating),
+        impersonatorAdminEmail: session.impersonatorAdminEmail || '',
       },
       currentOrganization: currentOrg
         ? {
@@ -67,7 +84,7 @@ export async function GET(request: NextRequest) {
             organizationType: currentOrg.organizationType,
             status: currentOrg.status,
             settings: currentOrg.settings,
-            subscription: currentOrg.subscriptions[0] || null,
+            subscription: currentOrg.subscriptions?.[0] || null,
           }
         : null,
       organizations: user.memberships.map((m) => ({
