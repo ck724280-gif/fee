@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  Trash2,
 } from 'lucide-react';
 
 export default function PlatformUsersPage() {
@@ -56,6 +57,35 @@ export default function PlatformUsersPage() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCleanOrphans = async () => {
+    if (!confirm('Are you sure you want to clean all orphaned user accounts that belong to deleted institutions?')) return;
+    try {
+      setLoading(true);
+      const res = await fetch('/api/super-admin/users?cleanOrphans=true', { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to clean orphaned accounts');
+      setSuccessMsg(json.message || 'Orphaned user accounts cleaned successfully.');
+      fetchUsers();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, email: string) => {
+    if (!confirm(`Are you sure you want to permanently delete user account "${email}"?`)) return;
+    try {
+      const res = await fetch(`/api/super-admin/users?userId=${userId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to delete user');
+      setSuccessMsg(json.message || 'User deleted successfully.');
+      fetchUsers();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -141,6 +171,17 @@ export default function PlatformUsersPage() {
             Change user emails (User IDs), reset passwords, manage multi-tenant permissions, and reset two-factor keys.
           </p>
         </div>
+
+        {users.some((u) => !u.isSuperAdmin && (!u.memberships || u.memberships.length === 0)) && (
+          <button
+            onClick={handleCleanOrphans}
+            disabled={loading}
+            className="px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-rose-600/10 cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            <span>Clean Deleted Org Users</span>
+          </button>
+        )}
       </div>
 
       {/* Alerts */}
@@ -273,14 +314,25 @@ export default function PlatformUsersPage() {
                         {new Date(u.createdAt).toLocaleDateString('en-IN')}
                       </td>
                       <td className="py-4 px-5 text-right">
-                        <button
-                          onClick={() => handleOpenEditModal(u)}
-                          className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 font-bold text-xs transition cursor-pointer inline-flex items-center gap-1.5 shadow-md active:scale-95"
-                          title="Change User ID / Reset Password"
-                        >
-                          <Edit2 className="w-3.5 h-3.5 text-blue-400" />
-                          <span>Change ID / Password</span>
-                        </button>
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => handleOpenEditModal(u)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 font-bold text-xs transition cursor-pointer inline-flex items-center gap-1.5 shadow-md active:scale-95"
+                            title="Change User ID / Reset Password"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Change ID / Password</span>
+                          </button>
+                          {!u.isSuperAdmin && (
+                            <button
+                              onClick={() => handleDeleteUser(u.id, u.email)}
+                              className="p-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 border border-rose-500/30 transition cursor-pointer shadow-md active:scale-95"
+                              title="Delete User Account"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

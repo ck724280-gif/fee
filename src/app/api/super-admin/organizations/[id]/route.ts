@@ -198,11 +198,15 @@ export async function DELETE(
 
     const existingOrg = await prisma.organization.findFirst({
       where: { OR: [{ id }, { publicId: id }] },
+      include: { members: true },
     });
 
     if (!existingOrg) {
       return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
     }
+
+    // Find member user IDs before deleting memberships
+    const memberUserIds = existingOrg.members.map((m) => m.userId);
 
     await prisma.$transaction(async (tx) => {
       await tx.subscriptionPayment.deleteMany({
@@ -235,6 +239,24 @@ export async function DELETE(
       await tx.organizationMember.deleteMany({
         where: { organizationId: existingOrg.id },
       });
+      await tx.organization.delete({
+        where: { id: existingOrg.id },
+      });
+
+      // Clean up orphaned non-superadmin users
+      for (const uId of memberUserIds) {
+        const otherMembershipsCount = await tx.organizationMember.count({
+          where: { userId: uId },
+        });
+        if (otherMembershipsCount === 0) {
+          const userObj = await tx.user.findUnique({ where: { id: uId } });
+          if (userObj && !userObj.isSuperAdmin) {
+            await tx.totpSecret.deleteMany({ where: { userId: uId } });
+            await tx.user.delete({ where: { id: uId } });
+          }
+        }
+      }
+
       await tx.auditLog.create({
         data: {
           userId: admin.userId,
@@ -243,9 +265,6 @@ export async function DELETE(
           entityId: existingOrg.id,
           details: { deletedOrgName: existingOrg.name, deletedSlug: existingOrg.slug },
         },
-      });
-      await tx.organization.delete({
-        where: { id: existingOrg.id },
       });
     });
 
