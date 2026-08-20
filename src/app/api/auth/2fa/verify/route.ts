@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import prisma from '@/lib/prisma';
-import { verifyTotpCode, decryptSecret } from '@/lib/totp';
+import { verifyTotpCode, decryptSecret, verifyAndConsumeRecoveryCode } from '@/lib/totp';
 import { createSession, PRE_2FA_COOKIE_NAME, JWT_SECRET_STRING } from '@/lib/auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
@@ -80,21 +80,17 @@ export async function POST(request: NextRequest) {
 
     // 4. Check Recovery Code if TOTP code not provided or failed
     if (!isValid && recoveryCode) {
-      const plainRecoveryCodesJson = decryptSecret(user.totpSecret.recoveryCodesEncrypted);
-      const recoveryCodes: string[] = JSON.parse(plainRecoveryCodesJson);
+      const recoveryResult = verifyAndConsumeRecoveryCode(
+        user.totpSecret.recoveryCodesEncrypted,
+        String(recoveryCode)
+      );
 
-      const targetRecoveryCode = String(recoveryCode).trim().toUpperCase();
-      const codeIndex = recoveryCodes.indexOf(targetRecoveryCode);
-
-      if (codeIndex !== -1) {
+      if (recoveryResult.isValid && recoveryResult.updatedEncryptedPayload) {
         isValid = true;
         usedRecoveryCode = true;
-        // Remove used recovery code
-        recoveryCodes.splice(codeIndex, 1);
-        const updatedEncryptedCodes = decryptSecret(JSON.stringify(recoveryCodes));
         await prisma.totpSecret.update({
           where: { userId: user.id },
-          data: { recoveryCodesEncrypted: updatedEncryptedCodes },
+          data: { recoveryCodesEncrypted: recoveryResult.updatedEncryptedPayload },
         });
       }
     }

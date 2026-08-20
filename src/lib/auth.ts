@@ -101,6 +101,27 @@ export async function signPre2faToken(payload: {
 }
 
 /**
+ * Signs a short-lived token for 2FA-powered self-service password reset.
+ */
+export async function signPasswordReset2faToken(payload: {
+  userId: string;
+  email: string;
+  isSuperAdmin?: boolean;
+}): Promise<string> {
+  return await new SignJWT({
+    userId: payload.userId,
+    email: payload.email,
+    isSuperAdmin: !!payload.isSuperAdmin,
+    purpose: '2FA_PASSWORD_RESET',
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setSubject(payload.userId)
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(JWT_SECRET);
+}
+
+/**
  * Verifies a pre-2FA token.
  */
 export async function verifyPre2faToken(token: string): Promise<{
@@ -122,6 +143,33 @@ export async function verifyPre2faToken(token: string): Promise<{
       userId: (payload.userId as string) || (payload.sub as string),
       email: payload.email as string,
       organizationId: (payload.organizationId as string) || DEFAULT_ORG_ID,
+      isSuperAdmin: Boolean(payload.isSuperAdmin),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verifies a 2FA password reset token.
+ */
+export async function verifyPasswordReset2faToken(token: string): Promise<{
+  userId: string;
+  email: string;
+  isSuperAdmin?: boolean;
+} | null> {
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET, {
+      algorithms: ['HS256'],
+    });
+
+    if (payload.purpose !== '2FA_PASSWORD_RESET') {
+      return null;
+    }
+
+    return {
+      userId: (payload.userId as string) || (payload.sub as string),
+      email: payload.email as string,
       isSuperAdmin: Boolean(payload.isSuperAdmin),
     };
   } catch {

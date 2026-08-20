@@ -152,11 +152,12 @@ export async function generateTotpSetup(email: string, issuer: string = 'Educati
 /**
  * Verifies a 6-digit TOTP code against a secret with time drift tolerance window.
  * Supports polymorphic argument order (token, secret) or (secret, token).
+ * Default window = 2 (±60 seconds clock drift tolerance).
  */
 export function verifyTotpCode(
   arg1: string,
   arg2: string,
-  window: number = 1
+  window: number = 2
 ): boolean {
   if (!arg1 || !arg2) return false;
 
@@ -201,6 +202,45 @@ export function generateRecoveryCodes(count: number = 8): string[] {
   return codes;
 }
 
+/**
+ * Verifies a recovery code against encrypted recovery codes array.
+ * If valid, consumes (removes) the code and returns the new encrypted string and remaining count.
+ */
+export function verifyAndConsumeRecoveryCode(
+  encryptedRecoveryCodesPayload: string,
+  enteredCode: string
+): { isValid: boolean; updatedEncryptedPayload?: string; remainingCount?: number } {
+  try {
+    if (!encryptedRecoveryCodesPayload || !enteredCode) {
+      return { isValid: false };
+    }
+
+    const plainCodesJson = decryptSecret(encryptedRecoveryCodesPayload);
+    const codes: string[] = JSON.parse(plainCodesJson);
+
+    // Normalize code format (e.g. A1B2-C3D4 or a1b2c3d4)
+    const rawClean = enteredCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const codeIndex = codes.findIndex((c) => c.replace(/[^A-Z0-9]/g, '') === rawClean);
+
+    if (codeIndex === -1) {
+      return { isValid: false };
+    }
+
+    // Remove single-use code
+    codes.splice(codeIndex, 1);
+    const updatedEncryptedPayload = encryptSecret(JSON.stringify(codes));
+
+    return {
+      isValid: true,
+      updatedEncryptedPayload,
+      remainingCount: codes.length,
+    };
+  } catch (error) {
+    console.error('Error verifying recovery code:', error);
+    return { isValid: false };
+  }
+}
+
 export const TotpEngine = {
   generateSecret,
   generateKeyUri,
@@ -209,6 +249,7 @@ export const TotpEngine = {
   generateTotpSetup,
   verifyTotpCode,
   generateRecoveryCodes,
+  verifyAndConsumeRecoveryCode,
 };
 
 export default TotpEngine;

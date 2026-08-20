@@ -20,6 +20,7 @@ import {
   Building2,
   ExternalLink,
 } from 'lucide-react';
+import { ResetPasswordWith2faModal } from '@/components/modals/ResetPasswordWith2faModal';
 
 function SuperAdminLoginForm() {
   const router = useRouter();
@@ -29,6 +30,7 @@ function SuperAdminLoginForm() {
   const [email, setEmail] = useState('admin@dprtuition.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // 2FA state
   const [requires2fa, setRequires2fa] = useState(false);
@@ -223,6 +225,13 @@ function SuperAdminLoginForm() {
                 <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
                   Master Password
                 </label>
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(true)}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold transition cursor-pointer hover:underline"
+                >
+                  Forgot Password? (2FA Reset)
+                </button>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-500 pointer-events-none" />
@@ -344,6 +353,18 @@ function SuperAdminLoginForm() {
           </form>
         )}
       </div>
+
+      {/* Master Admin 2FA Password Reset Modal */}
+      <ResetPasswordWith2faModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        defaultEmail={email}
+        isSuperAdminContext={true}
+        onSuccessRedirect={() => {
+          setIsResetModalOpen(false);
+          setSuccessMessage('Master Admin password reset successfully! Please log in with your new credentials.');
+        }}
+      />
     </div>
   );
 }

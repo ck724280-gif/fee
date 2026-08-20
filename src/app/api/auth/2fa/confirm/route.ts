@@ -11,10 +11,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { code } = body;
+    const rawCode = body.code || body.totpCode || '';
+    const code = String(rawCode).trim();
 
-    if (!code) {
-      return NextResponse.json({ error: 'Verification code is required' }, { status: 400 });
+    if (!code || code.length !== 6) {
+      return NextResponse.json(
+        { error: 'Please enter a valid 6-digit verification code from your authenticator app.' },
+        { status: 400 }
+      );
     }
 
     const dbSecret = await prisma.totpSecret.findUnique({

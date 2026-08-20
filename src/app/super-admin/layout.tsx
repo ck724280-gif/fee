@@ -132,7 +132,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
       const res = await fetch('/api/auth/2fa/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ totpCode: totpCode.trim() }),
+        body: JSON.stringify({ code: totpCode.trim(), totpCode: totpCode.trim() }),
       });
 
       const data = await res.json();

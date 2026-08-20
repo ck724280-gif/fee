@@ -314,7 +314,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/auth/2fa/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: totpInputCode.trim() }),
+        body: JSON.stringify({ code: totpInputCode.trim(), totpCode: totpInputCode.trim() }),
       });
 
       const json = await res.json();

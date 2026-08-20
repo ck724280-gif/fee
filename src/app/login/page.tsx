@@ -20,6 +20,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from 'lucide-react';
+import { ResetPasswordWith2faModal } from '@/components/modals/ResetPasswordWith2faModal';
 
 function LoginForm() {
   const router = useRouter();
@@ -30,6 +31,7 @@ function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // Step 2 State: 2FA TOTP Code
   const [requires2fa, setRequires2fa] = useState(false);
@@ -220,6 +222,13 @@ function LoginForm() {
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   Password
                 </label>
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(true)}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition cursor-pointer hover:underline"
+                >
+                  Forgot Password? (2FA Reset)
+                </button>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-500 pointer-events-none" />
@@ -350,6 +359,18 @@ function LoginForm() {
           </p>
         </div>
       </div>
+
+      {/* 2FA Password Reset Modal */}
+      <ResetPasswordWith2faModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        defaultEmail={email}
+        isSuperAdminContext={false}
+        onSuccessRedirect={() => {
+          setIsResetModalOpen(false);
+          setSuccessMessage('Password reset successfully! Please sign in with your new password.');
+        }}
+      />
     </div>
   );
 }
