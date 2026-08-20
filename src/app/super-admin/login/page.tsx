@@ -68,14 +68,21 @@ function SuperAdminLoginForm() {
         return;
       }
 
-      if (!data.user?.isSuperAdmin) {
-        setErrorMessage('Access Denied: This terminal is strictly reserved for Master Platform Super Administrators. Please sign in via the Institute Portal.');
+      const isSuperAdmin = Boolean(data.user?.isSuperAdmin ?? data.isSuperAdmin);
+
+      if (data.requires2fa) {
+        if (!isSuperAdmin) {
+          setErrorMessage('Access Denied: This terminal is strictly reserved for Master Platform Super Administrators. Please sign in via the Institute Portal.');
+          setLoading(false);
+          return;
+        }
+        setRequires2fa(true);
         setLoading(false);
         return;
       }
 
-      if (data.requires2fa) {
-        setRequires2fa(true);
+      if (!isSuperAdmin) {
+        setErrorMessage('Access Denied: This terminal is strictly reserved for Master Platform Super Administrators. Please sign in via the Institute Portal.');
         setLoading(false);
         return;
       }

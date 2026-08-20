@@ -89,6 +89,13 @@ export async function POST(request: NextRequest) {
         requires2fa: true,
         message: 'Two-factor authentication required. Enter the 6-digit code from your authenticator app.',
         userId: user.id,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          isSuperAdmin: !!user.isSuperAdmin,
+        },
+        isSuperAdmin: !!user.isSuperAdmin,
       });
 
       response.cookies.set(PRE_2FA_COOKIE_NAME, pre2faToken, PRE_2FA_COOKIE_OPTIONS);
