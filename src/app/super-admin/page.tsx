@@ -101,7 +101,7 @@ export default function SuperAdminDashboard() {
               <Building2 className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-              {stats?.activeOrganizations} Active
+              {stats?.activeOrganizations || 0} Active
             </span>
           </div>
           <div className="mt-4">

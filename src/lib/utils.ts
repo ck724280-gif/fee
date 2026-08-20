@@ -26,3 +26,38 @@ export function formatDate(date: Date | string | null | undefined): string {
     year: 'numeric',
   });
 }
+
+export function copyToClipboard(text: string): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).catch(() => {
+        fallbackCopyTextToClipboard(text);
+      });
+      return true;
+    }
+    return fallbackCopyTextToClipboard(text);
+  } catch {
+    return fallbackCopyTextToClipboard(text);
+  }
+}
+
+function fallbackCopyTextToClipboard(text: string): boolean {
+  try {
+    if (typeof document === 'undefined') return false;
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch {
+    return false;
+  }
+}

@@ -105,8 +105,10 @@ export default function ExpensesPage() {
         const json = await res.json();
 
         if (json.success && json.data) {
-          setExpenses(json.data.expenses);
-          setPagination(json.data.pagination);
+          const list = json.data.expenses || (Array.isArray(json.data) ? json.data : []);
+          const pag = json.data.pagination || { total: list.length, page: 1, limit: 20, totalPages: 1 };
+          setExpenses(list);
+          setPagination(pag);
         }
       } catch (err) {
         console.error('Failed to fetch expenses list:', err);

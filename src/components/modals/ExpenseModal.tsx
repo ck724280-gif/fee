@@ -67,7 +67,7 @@ export function ExpenseModal({
         title: initialData.title || '',
         category: initialData.category || 'TEACHER_SALARY',
         amount: initialData.amount ?? '',
-        expenseDate: initialData.expenseDate ? formatYMD(new Date(initialData.expenseDate)) : formatYMD(new Date()),
+        expenseDate: initialData.expenseDate ? String(initialData.expenseDate).slice(0, 10) : formatYMD(new Date()),
         paymentMethod: initialData.paymentMethod || 'CASH',
         referenceNumber: initialData.referenceNumber || '',
         payeeName: initialData.payeeName || '',

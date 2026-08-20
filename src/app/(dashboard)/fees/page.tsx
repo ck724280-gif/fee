@@ -93,12 +93,13 @@ export default function FeesPage() {
         const res = await fetch(`/api/fees?${params.toString()}`);
         const json = await res.json();
 
-        if (json.success) {
-          setFeeRecords(json.data.feeRecords);
-          setPagination(json.data.pagination);
-          if (json.data.summary) {
-            setSummary(json.data.summary);
-          }
+        if (json.success || json.feeRecords || Array.isArray(json.data)) {
+          const list = json.data?.feeRecords || (Array.isArray(json.data) ? json.data : json.feeRecords || []);
+          const pag = json.data?.pagination || json.pagination || { total: list.length, page: 1, limit: 20, totalPages: 1 };
+          const sum = json.data?.summary || json.summary || { totalBilled: 0, totalPaid: 0, totalOutstanding: 0 };
+          setFeeRecords(list);
+          setPagination(pag);
+          setSummary(sum);
         }
       } catch (err) {
         console.error('Failed to load fee records:', err);

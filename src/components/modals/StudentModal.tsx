@@ -97,15 +97,15 @@ export function StudentModal({
         mobile: initialData.mobile || '',
         whatsappNumber: initialData.whatsappNumber || '',
         address: initialData.address || '',
-        dob: initialData.dob ? formatYMD(new Date(initialData.dob)) : '',
+        dob: initialData.dob ? String(initialData.dob).slice(0, 10) : '',
         gender: initialData.gender || 'MALE',
         school: initialData.school || '',
         classId: initialData.classId || classes[0]?.id || '',
         admissionDate: initialData.admissionDate
-          ? formatYMD(new Date(initialData.admissionDate))
+          ? String(initialData.admissionDate).slice(0, 10)
           : formatYMD(new Date()),
         joiningDate: initialData.joiningDate
-          ? formatYMD(new Date(initialData.joiningDate))
+          ? String(initialData.joiningDate).slice(0, 10)
           : formatYMD(new Date()),
         feeMode: initialData.feeMode || 'DEFAULT',
         customMonthlyFee: initialData.customMonthlyFee ?? null,

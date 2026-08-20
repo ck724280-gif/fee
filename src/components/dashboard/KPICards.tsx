@@ -56,7 +56,7 @@ function TiltKPICard({
   // Smooth Counter Animation on Mount
   useEffect(() => {
     let start = 0;
-    const end = card.numericValue;
+    const end = Number.isFinite(card.numericValue) ? card.numericValue : 0;
     if (end === 0) {
       setCount(0);
       return;

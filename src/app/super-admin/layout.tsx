@@ -25,6 +25,7 @@ import {
   Lock,
   Sparkles,
 } from 'lucide-react';
+import { copyToClipboard } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { href: '/super-admin', label: 'Platform Overview', icon: LayoutDashboard },
@@ -180,7 +181,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   };
 
   const handleCopyRecoveryCodes = () => {
-    navigator.clipboard.writeText(recoveryCodes.join('\n'));
+    copyToClipboard(recoveryCodes.join('\n'));
     setCopiedCodes(true);
     setTimeout(() => setCopiedCodes(false), 2000);
   };

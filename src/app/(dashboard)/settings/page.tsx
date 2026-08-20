@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Alert } from '@/components/ui/Alert';
 import { Switch } from '@/components/ui/Switch';
+import { copyToClipboard } from '@/lib/utils';
 import {
   Settings,
   Save,
@@ -364,7 +365,7 @@ export default function SettingsPage() {
 
   const copySecret = () => {
     if (setup2faData?.secret) {
-      navigator.clipboard.writeText(setup2faData.secret);
+      copyToClipboard(setup2faData.secret);
       setCopiedSecret(true);
       setTimeout(() => setCopiedSecret(false), 2000);
     }

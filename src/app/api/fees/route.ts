@@ -131,21 +131,30 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    const pagination = {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+
+    const summary = {
+      totalBilled: aggregations._sum.totalAmount || 0,
+      totalPaid: aggregations._sum.paidAmount || 0,
+      totalOutstanding: aggregations._sum.outstandingAmount || 0,
+      totalLateFees: aggregations._sum.lateFeeAmount || 0,
+    };
+
     return NextResponse.json({
       success: true,
-      data: feeRecords,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+      data: {
+        feeRecords,
+        pagination,
+        summary,
       },
-      summary: {
-        totalBilled: aggregations._sum.totalAmount || 0,
-        totalPaid: aggregations._sum.paidAmount || 0,
-        totalOutstanding: aggregations._sum.outstandingAmount || 0,
-        totalLateFees: aggregations._sum.lateFeeAmount || 0,
-      },
+      feeRecords,
+      pagination,
+      summary,
     });
   } catch (error) {
     return handleApiAuthError(error);

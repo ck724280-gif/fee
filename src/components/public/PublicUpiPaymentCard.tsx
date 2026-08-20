@@ -17,7 +17,7 @@ import {
   UserCheck,
   Lock,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, copyToClipboard } from '@/lib/utils';
 
 interface PublicUpiPaymentCardProps {
   feeId: string;
@@ -83,11 +83,9 @@ export default function PublicUpiPaymentCard({
         )}&format=svg`;
 
   const handleCopyUpi = () => {
-    if (navigator?.clipboard) {
-      navigator.clipboard.writeText(cleanUpiId);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    }
+    copyToClipboard(cleanUpiId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   };
 
   const handleSubmitUtr = async (e: React.FormEvent) => {

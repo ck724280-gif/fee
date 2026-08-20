@@ -42,10 +42,10 @@ export default function PlatformAuditLogsPage() {
 
   const filteredLogs = logs.filter(
     (l) =>
-      l.action.toLowerCase().includes(search.toLowerCase()) ||
-      l.organization?.name?.toLowerCase().includes(search.toLowerCase()) ||
-      l.user?.email?.toLowerCase().includes(search.toLowerCase()) ||
-      l.entity?.toLowerCase().includes(search.toLowerCase())
+      (l.action || '').toLowerCase().includes(search.toLowerCase()) ||
+      (l.organization?.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (l.user?.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (l.entity || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (

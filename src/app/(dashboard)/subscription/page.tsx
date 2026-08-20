@@ -24,6 +24,8 @@ import {
   IndianRupee,
 } from 'lucide-react';
 
+import { copyToClipboard } from '@/lib/utils';
+
 const DURATION_OPTIONS = [
   { months: 1, label: '1 Month', discount: 0, tag: 'Standard' },
   { months: 3, label: '3 Months', discount: 5, tag: 'Popular (5% OFF)' },
@@ -63,7 +65,7 @@ export default function InstituteSubscriptionPage() {
   }, []);
 
   const handleCopyUpi = (upiId: string) => {
-    navigator.clipboard.writeText(upiId);
+    copyToClipboard(upiId);
     setCopiedUpi(true);
     setTimeout(() => setCopiedUpi(false), 2000);
   };

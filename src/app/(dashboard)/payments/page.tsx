@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Pagination } from '@/components/ui/Pagination';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, copyToClipboard } from '@/lib/utils';
 import { buildWhatsAppUrl, generatePaymentReceiptMessage } from '@/lib/whatsapp';
 import {
   Receipt,
@@ -219,11 +219,9 @@ export default function PaymentsPage() {
   };
 
   const handleCopyUtr = (utr: string) => {
-    if (navigator?.clipboard) {
-      navigator.clipboard.writeText(utr);
-      setCopiedUtr(utr);
-      setTimeout(() => setCopiedUtr(null), 2000);
-    }
+    copyToClipboard(utr);
+    setCopiedUtr(utr);
+    setTimeout(() => setCopiedUtr(null), 2000);
   };
 
   const handleWhatsAppReceipt = (p: any) => {

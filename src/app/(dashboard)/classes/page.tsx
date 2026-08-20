@@ -32,8 +32,8 @@ export default function ClassesPage() {
       setError(null);
       const res = await fetch('/api/classes');
       const json = await res.json();
-      if (json.success) {
-        setClasses(json.data);
+      if (json.success || Array.isArray(json.data) || Array.isArray(json)) {
+        setClasses(Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []));
       } else {
         throw new Error(json.error || 'Failed to load classes');
       }

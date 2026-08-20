@@ -21,8 +21,9 @@ const AVATAR_GRADIENTS = [
 ];
 
 export function RecentPaymentsTable({ payments }: RecentPaymentsTableProps) {
-  const getMethodBadge = (method: string) => {
-    switch (method.toUpperCase()) {
+  const getMethodBadge = (method?: string | null) => {
+    const safeMethod = (method || 'OTHER').toUpperCase();
+    switch (safeMethod) {
       case 'UPI':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 text-[10px] font-black text-purple-800 uppercase shadow-2xs">

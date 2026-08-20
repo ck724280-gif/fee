@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
+import { copyToClipboard } from '@/lib/utils';
 import { Copy, Check, MessageSquare } from 'lucide-react';
 
 export interface WhatsAppPreviewModalProps {
@@ -33,14 +34,10 @@ export function WhatsAppPreviewModal({
     setCopied(false);
   }, [phone, defaultMessage, isOpen]);
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(message);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback
-    }
+  const handleCopy = () => {
+    copyToClipboard(message);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleOpenWhatsApp = () => {
